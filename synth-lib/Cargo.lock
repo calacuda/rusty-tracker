@@ -1155,7 +1155,6 @@ checksum = "d1fceb9d127d515af1586d8d0cc601e1245bdb0af38e75c865a156290184f5b3"
 dependencies = [
  "claxon",
  "cpal",
- "crossbeam-channel",
  "hound",
  "lewton",
  "symphonia",
