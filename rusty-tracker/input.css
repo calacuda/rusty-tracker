@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-display: block;
+  font-family: "AnonymousPro";
+  src: url("/public/assets/fonts/AnonymousPro.ttf");
+}
+
+@font-face {
+  font-display: block;
+  font-family: "AnonymousPro";
+  font-style: italic;
+  src: url("/public/assets/fonts/AnonymousPro-I.ttf");
+}
+
+:root {
+  font-family: AnonymousPro;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 400;
+
+  color: #0f0f0f;
+  background-color: #f6f6f6;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-text-size-adjust: 100%;
+}

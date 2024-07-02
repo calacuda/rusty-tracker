@@ -1,0 +1,3 @@
+- [x] make line numbers buttons that will set playback head location
+- [x] add button to start playback
+- [ ] make audio output no longer async

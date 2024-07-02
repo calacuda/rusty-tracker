@@ -1,0 +1,9 @@
+[package]
+name = "tracker-lib"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.86"
+serde = { version = "1.0.203", features = ["derive"] }
+synth-8080-lib = { git = "https://github.com/calacuda/synth-8080", version = "0.1.0", default-features = false, features = ["HiFi"] }

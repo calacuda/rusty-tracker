@@ -1,0 +1,12 @@
+dev:
+  cargo tauri dev
+
+release:
+  cargo tauri dev --release
+
+build:
+  cargo tauri build 
+
+tailwind:
+  npm list @catppuccin/tailwindcss > /dev/null || npm install -D @catppuccin/tailwindcss
+  npx tailwindcss -i ./input.css -o ./styles.css --watch
