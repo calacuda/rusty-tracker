@@ -1,13 +1,8 @@
 use super::synth::Synth;
 use anyhow::{bail, Result};
-use crossbeam_channel::{Receiver, Sender};
 use rayon::prelude::*;
 use rodio::{OutputStream, Source};
-use std::{
-    future::Future,
-    sync::{Arc, Mutex},
-    task::Poll,
-};
+use std::sync::{Arc, Mutex};
 use synth_8080::{Float, SAMPLE_RATE};
 use synth_8080_lib::notes::Note;
 use tracing::*;

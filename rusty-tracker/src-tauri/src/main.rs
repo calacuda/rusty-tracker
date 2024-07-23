@@ -11,11 +11,11 @@ use std::{
     time::{Duration, Instant},
 };
 use synth_lib::{audio::TrackerSynth, init_synth, Note};
-use tauri::{async_runtime::spawn, State};
+use tauri::{async_runtime::spawn, Manager, State, Window};
 use tracing::*;
 use tracker_lib::{
-    Channel, ChannelIndex, Cmd, CmdArg, Float, MidiNote, MidiTarget, PlaybackCmd, PlaybackState,
-    PlayerCmd, TrackerState,
+    Channel, ChannelIndex, Cmd, CmdArg, Float, MidiNote, MidiNoteCmd, MidiTarget, PlaybackCmd,
+    PlaybackState, PlayerCmd, TrackerState,
 };
 
 pub const MAX_COL_LEN: usize = 0xFFFF;
@@ -65,13 +65,24 @@ impl Player {
         )
     }
 
-    fn send_note(&mut self, note: MidiNote, channel: usize) {
-        let note = Note::from(note);
+    fn send_note(&mut self, note: MidiNoteCmd, channel: usize) {
+        // let note = Note::from(note);
+        let (note, play) = match note {
+            MidiNoteCmd::PlayNote(note) => (Note::from(note), true),
+            MidiNoteCmd::StopNote(note) => (Note::from(note), false),
+            MidiNoteCmd::HoldNote => return,
+        };
 
         match self.target {
             MidiTarget::BuiltinSynth => {
-                if let Err(e) = self.synth.lock().unwrap().play(note, channel) {
-                    error!("the built in synth failed to play \"{note}\" on channel \"{channel}\". failed with error {e}.")
+                if play {
+                    if let Err(e) = self.synth.lock().unwrap().play(note, channel) {
+                        error!("the built in synth failed to play \"{note}\" on channel \"{channel}\". failed with error {e}.")
+                    }
+                } else {
+                    if let Err(e) = self.synth.lock().unwrap().stop(note, channel) {
+                        error!("the built in synth failed to play \"{note}\" on channel \"{channel}\". failed with error {e}.")
+                    }
                 }
             }
             _ => error!("not implemented yet"),
@@ -139,10 +150,12 @@ impl Future for Player {
 
             if Instant::now().duration_since(s.last_event) >= s.beat_time {
                 s.last_event = Instant::now();
-                s.state = PlaybackState::Playing(line_i + 1);
-                info!("playback state: {:?}", s.state);
+                s.state = PlaybackState::Playing(
+                    (line_i + 1) % s.song.lock().unwrap().sequences[0].len(),
+                );
+                info!("playback state: {:0X}", line_i);
 
-                let notes: Vec<(usize, Vec<MidiNote>)> = s
+                let notes: Vec<(usize, Vec<MidiNoteCmd>)> = s
                     .song
                     .lock()
                     .unwrap()
@@ -198,21 +211,6 @@ impl Future for Player {
     }
 }
 
-// Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
-// #[tauri::command(rename_all = "snake_case")]
-// fn play_note(synth: State<'_, Arc<Mutex<TrackerSynth>>>, note: Note, channel: usize) {
-//     if let Err(_e) = synth.lock().unwrap().play(note, channel) {
-//         // TODO: send window event with error message
-//     }
-// }
-//
-// #[tauri::command(rename_all = "snake_case")]
-// fn stop_note(synth: State<'_, Arc<Mutex<TrackerSynth>>>, note: Note, channel: usize) {
-//     if let Err(_e) = synth.lock().unwrap().stop(note, channel) {
-//         // TODO: send window event with error message
-//     }
-// }
-
 #[tauri::command(rename_all = "snake_case")]
 fn send_midi(_synth: State<'_, Arc<Mutex<TrackerState>>>, _midi_cmd: Vec<u8>) {
     // synth.stop(note);
@@ -224,31 +222,54 @@ fn add_note(
     state: State<'_, Arc<Mutex<TrackerState>>>,
     note: MidiNote,
     channel: ChannelIndex,
-    row: usize,
+    start: usize,
+    stop: usize,
     note_number: usize,
 ) {
     // println!("inside add_note");
-    if let Err(e) = state
-        .lock()
-        .unwrap()
-        .add_note(note, channel, row, note_number)
-    {
-        error!("failed to add {note}, to channel {channel}, at location {row}. this process failed with error: {e}");
+    if let Err(e) = state.lock().unwrap().add_note(
+        Some(MidiNoteCmd::PlayNote(note)),
+        channel,
+        start,
+        note_number,
+    ) {
+        error!("failed to add note: {note:?}, to channel {channel}, at row {start}. this process failed with error: {e}");
     }
+
+    for i in (start + 1)..stop {
+        if let Err(e) =
+            state
+                .lock()
+                .unwrap()
+                .add_note(Some(MidiNoteCmd::HoldNote), channel, i, note_number)
+        {
+            error!("failed to add note: {note:?}, to channel {channel}, at row {i}. this process failed with error: {e}");
+        }
+    }
+
+    if let Err(e) = state.lock().unwrap().add_note(
+        Some(MidiNoteCmd::StopNote(note)),
+        channel,
+        stop,
+        note_number,
+    ) {
+        error!("failed to add note: {note:?}, to channel {channel}, at row {stop}. this process failed with error: {e}");
+    }
+
     // else {
     //     info!("added note {note} successfully");
     // }
 }
 
-#[tauri::command(rename_all = "snake_case")]
-fn set_play_head(
-    synth: State<'_, Arc<Mutex<Player>>>,
-    note: Note,
-    channel: Option<usize>,
-    row: usize,
-) {
-    // warn!("setting the play head location on the back end is not yet implemented");
-}
+// #[tauri::command(rename_all = "snake_case")]
+// fn set_play_head(
+//     synth: State<'_, Arc<Mutex<Player>>>,
+//     note: Note,
+//     channel: Option<usize>,
+//     row: usize,
+// ) {
+//     // warn!("setting the play head location on the back end is not yet implemented");
+// }
 
 #[tauri::command(rename_all = "snake_case")]
 fn playback(
@@ -263,6 +284,11 @@ fn playback(
                 error!("failed to play: {e}");
             };
         }
+        PlaybackCmd::Stop => {
+            if let Err(e) = player_ipc.lock().unwrap().send(PlayerCmd::StopPlayback) {
+                error!("failed to stop: {e}");
+            };
+        }
         PlaybackCmd::SetCursor(loc) => {
             if let Err(e) = player_ipc.lock().unwrap().send(PlayerCmd::SetCursor(loc)) {
                 error!("failed to set cursor loction: {e}");
@@ -270,6 +296,18 @@ fn playback(
         }
         _ => warn!("playback is not yet enabled on the back end is not yet implemented"),
     }
+}
+
+#[tauri::command(rename_all = "snake_case")]
+fn get_state(
+    window: Window,
+    state: State<'_, Arc<Mutex<TrackerState>>>,
+    start_row: usize,
+    n_rows: usize,
+) {
+    let tracker_state = { state.lock().unwrap().copy_from_row(start_row, n_rows) };
+
+    window.emit_all("state-change", tracker_state).unwrap();
 }
 
 // #[tokio::main(flavor = "multi_thread", worker_threads = 2)]
@@ -290,8 +328,10 @@ fn main() -> Result<()> {
 
     info!("starting audio stream");
     stream_handle.play_raw(audio).unwrap();
+    info!("initializing tracker state");
     let state = Arc::new(Mutex::new(TrackerState::default()));
 
+    info!("initializing player");
     let (player, player_ipc) = Player::new(state.clone(), synth.clone());
     let _midi_thread = spawn(player);
 
@@ -303,10 +343,7 @@ fn main() -> Result<()> {
         .invoke_handler(tauri::generate_handler![
             // play_note,
             // stop_note,
-            send_midi,
-            set_play_head,
-            playback,
-            add_note
+            send_midi, playback, add_note, get_state
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

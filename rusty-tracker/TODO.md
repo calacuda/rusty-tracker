@@ -1,3 +1,4 @@
 - [x] make line numbers buttons that will set playback head location
 - [x] add button to start playback
-- [ ] make audio output no longer async
+- [x] make audio output no longer async
+- [x] move sending and setting of notes and cmds to app component

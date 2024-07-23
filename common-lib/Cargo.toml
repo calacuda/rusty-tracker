@@ -3,7 +3,13 @@ name = "tracker-lib"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []
+bevy = ["dep:bevy"]
+
 [dependencies]
 anyhow = "1.0.86"
+bevy = { version = "0.14.0", features = ["bevy_sprite", "dynamic_linking"], optional = true }
 serde = { version = "1.0.203", features = ["derive"] }
+serde-big-array = "0.5.1"
 synth-8080-lib = { git = "https://github.com/calacuda/synth-8080", version = "0.1.0", default-features = false, features = ["HiFi"] }

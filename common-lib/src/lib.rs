@@ -2,17 +2,32 @@ use anyhow::{bail, ensure, Result};
 use serde::{Deserialize, Serialize};
 pub use synth_8080_lib::{notes::Note, Float};
 
+#[cfg(feature = "bevy")]
+use bevy::prelude::*;
+
 pub type MidiNote = u8;
 pub type CmdArg = u32;
 pub type Cmd = char;
 pub type ChannelIndex = u8;
 
+pub const LINE_LEN: usize = 0xFFFF;
+
+#[cfg_attr(feature = "bevy", derive(Resource))]
+#[derive(Serialize, Deserialize, Clone, Debug, Copy, Eq, Hash, PartialEq)]
+pub enum MidiNoteCmd {
+    PlayNote(MidiNote),
+    StopNote(MidiNote),
+    HoldNote,
+}
+
+#[cfg_attr(feature = "bevy", derive(Resource))]
 #[derive(Serialize, Deserialize, Default, Clone, Debug, Copy, Eq, Hash, PartialEq)]
 pub struct RowData {
-    pub notes: [Option<MidiNote>; 3],
+    pub notes: [Option<MidiNoteCmd>; 4],
     pub cmds: [Option<(Cmd, Option<CmdArg>)>; 2],
 }
 
+#[cfg_attr(feature = "bevy", derive(Resource))]
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TrackerState {
     pub sequences: Vec<Vec<RowData>>,
@@ -21,7 +36,11 @@ pub struct TrackerState {
 
 impl Default for TrackerState {
     fn default() -> Self {
-        let def: Vec<RowData> = [RowData::default(); 0xFF].into_iter().collect();
+        let mut def: Vec<RowData> = Vec::with_capacity(LINE_LEN);
+
+        (0..LINE_LEN)
+            .into_iter()
+            .for_each(|_| def.push(RowData::default()));
 
         Self {
             sequences: [
@@ -63,7 +82,7 @@ impl TrackerState {
 
     pub fn add_note(
         &mut self,
-        note: MidiNote,
+        note: Option<MidiNoteCmd>,
         channel: ChannelIndex,
         row: usize,
         note_num: usize,
@@ -80,9 +99,38 @@ impl TrackerState {
             }
         }
 
-        self.sequences[channel][row].notes[note_num] = Some(note);
+        self.sequences[channel][row].notes[note_num] = note;
 
         Ok(())
+    }
+
+    pub fn empty() -> Self {
+        let def: Vec<RowData> = vec![RowData::default()];
+
+        Self {
+            sequences: [
+                def.clone(),
+                def.clone(),
+                def.clone(),
+                def.clone(),
+                // def.clone(),
+            ]
+            .into_iter()
+            .collect(),
+            display_start: 0,
+        }
+    }
+
+    pub fn copy_from_row(&self, row: usize, n_rows: usize) -> Self {
+        Self {
+            display_start: self.display_start,
+            sequences: vec![
+                self.sequences[0][row..row + n_rows].to_vec(),
+                self.sequences[1][row..row + n_rows].to_vec(),
+                self.sequences[2][row..row + n_rows].to_vec(),
+                self.sequences[3][row..row + n_rows].to_vec(),
+            ],
+        }
     }
 }
 

@@ -1,6 +1,6 @@
 # Rusty Tracker
 
-midi tracker and audio synthesis software build in [rust](https://www.rust-lang.org/) using [tauri](https://tauri.app/)
+midi tracker and audio synthesis software build in [rust](https://www.rust-lang.org/) using [tauri](https://tauri.app/) and [leptos](https://book.leptos.dev/01_introduction.html) to get a GUI.
 
 ## Progress
 

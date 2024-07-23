@@ -1,3 +1,4 @@
+#![feature(trivial_bounds)]
 use anyhow::Result;
 use audio::{AudioOutputSync, TrackerSynth};
 use rodio::{OutputStream, OutputStreamHandle, Source};

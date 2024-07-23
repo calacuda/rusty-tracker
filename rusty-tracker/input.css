@@ -17,9 +17,9 @@
 
 :root {
   font-family: AnonymousPro;
-  font-size: 16px;
-  line-height: 24px;
-  font-weight: 400;
+  /* font-size: 16px; */
+  /* line-height: 24px; */
+  /* font-weight: 400; */
 
   color: #0f0f0f;
   background-color: #f6f6f6;
@@ -29,4 +29,9 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   -webkit-text-size-adjust: 100%;
+}
+
+body {
+  width: 100vw;
+  height: 100vh;
 }
