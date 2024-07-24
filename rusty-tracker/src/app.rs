@@ -244,9 +244,11 @@ pub fn App() -> impl IntoView {
                 };
 
                 view! {
-                    <button class="grid grid-flow-col" on:click=click>
-                        { line_num }
-                    </button>
+                    <div>
+                        <button class="" on:click=click>
+                            { line_num }
+                        </button>
+                    </div>
                 }
             })
             .collect()
@@ -257,7 +259,7 @@ pub fn App() -> impl IntoView {
         // nums.append(&mut line_nums);
 
         view! {
-            <div class="col-span-1 grid-flow-row p-2">
+            <div class="justify-center text-center col-span-1 grid-flow-row p-2">
                 <div class="grid grid-flow-col"> <br/> </div>
                 <div class="grid grid-flow-col"> <br/> </div>
                 { line_nums.collect_view() }
@@ -590,7 +592,7 @@ pub fn App() -> impl IntoView {
                 <p> "settings menu (WIP)" </p>
                 <div class="justify-center text-center gap-x-2 flex">
                     <button
-                        class="bg-peach"
+                        class="bg-peach px-2"
                         on:click=move |_| {
                             let args = PlaybackArgs {
                                 playback_cmd: PlaybackCmd::Play,
@@ -606,7 +608,7 @@ pub fn App() -> impl IntoView {
                     </button>
                     // <div class="p-2"></div>
                     <button
-                        class="bg-peach"
+                        class="bg-peach px-2"
                         on:click=move |_| {
                             let args = PlaybackArgs {
                                 playback_cmd: PlaybackCmd::Stop,
@@ -623,7 +625,7 @@ pub fn App() -> impl IntoView {
                 </div>
             </div>
 
-            <div class="grid grid-cols-12 h-fit max-h-fit">
+            <div class="justify-center text-center grid grid-cols-12 h-fit max-h-fit">
                 { get_line_nums }
                 { get_sequences() }
             </div>
