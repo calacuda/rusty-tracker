@@ -101,6 +101,13 @@ struct AddNoteArgs {
     note_number: usize,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+struct RmNoteArgs {
+    channel: ChannelIndex,
+    row: usize,
+    note_number: usize,
+}
+
 #[derive(
     Serialize, Deserialize, Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash,
 )]
@@ -162,17 +169,17 @@ pub fn App() -> impl IntoView {
     let get_state = move || {
         // let _width = width.get();
         // let size = font_size.get().into();
-        let n_rows = num_lines(font_size.get_untracked().into());
+        let n_rows = num_lines(font_size.get().into());
 
-        // log!(
-        //     "n_rows: {n_rows:0X} | height: {}",
-        //     window().inner_height().unwrap().as_f64().unwrap() - header_h.get_untracked()
-        // );
-        //
-        // log!(
-        //     "n_rows: {n_rows:0X} ({n_rows}, in base 10) | height: {}",
-        //     window().inner_height().unwrap().as_f64().unwrap() - header_h.get_untracked()
-        // );
+        log!(
+            "n_rows: {n_rows:0X} | height: {}",
+            window().inner_height().unwrap().as_f64().unwrap() - header_h.get_untracked()
+        );
+
+        log!(
+            "n_rows: {n_rows:0X} ({n_rows}, in base 10) | height: {}",
+            window().inner_height().unwrap().as_f64().unwrap() - header_h.get_untracked()
+        );
 
         let args = GetStateArgs {
             start_row: 0,
@@ -304,6 +311,30 @@ pub fn App() -> impl IntoView {
                 get_state();
             });
         }
+    };
+
+    let rm_backend_note = move || {
+        // if let Some(note) = note_storage.get() {
+        let loc = location.get();
+        // let state = tracker_state.get();
+        let channel = loc.1 / 6;
+        let note_num = loc.1 % 6;
+
+        let args_play = RmNoteArgs {
+            channel: channel as ChannelIndex,
+            note_number: note_num,
+            row: loc.0,
+        };
+
+        warn!("removing note on backend");
+
+        spawn_local(async move {
+            // warn!("adding note async block");
+            invoke("rm_note", to_value(&args_play).unwrap()).await;
+
+            get_state();
+        });
+        // }
     };
 
     let set_display_note = move |note: Option<MidiNoteCmd>| {
@@ -521,9 +552,10 @@ pub fn App() -> impl IntoView {
         if mode.get() == Mode::Move {
             // set_note(None);
             // TODO: remove note from backend
+            rm_backend_note();
 
             // toggle_scope.call("move".to_string());
-            set_mode.set(Mode::Move);
+            // set_mode.set(Mode::Move);
         }
     });
 

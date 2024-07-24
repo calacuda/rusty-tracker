@@ -261,6 +261,19 @@ fn add_note(
     // }
 }
 
+#[tauri::command(rename_all = "snake_case")]
+fn rm_note(
+    state: State<'_, Arc<Mutex<TrackerState>>>,
+    channel: ChannelIndex,
+    row: usize,
+    note_number: usize,
+) {
+    // println!("inside add_note");
+    if let Err(e) = state.lock().unwrap().rm_note(channel, row, note_number) {
+        error!("failed to rm note on row {row}, from channel {channel}. this process failed with error: {e}");
+    }
+}
+
 // #[tauri::command(rename_all = "snake_case")]
 // fn set_play_head(
 //     synth: State<'_, Arc<Mutex<Player>>>,
@@ -321,11 +334,6 @@ fn main() -> Result<()> {
         }
     };
 
-    // let _audio_gen_thread = spawn(a_io);
-    // spawn(async move {
-    //     stream_handle.play_raw(audio).unwrap();
-    // });
-
     info!("starting audio stream");
     stream_handle.play_raw(audio).unwrap();
     info!("initializing tracker state");
@@ -343,7 +351,7 @@ fn main() -> Result<()> {
         .invoke_handler(tauri::generate_handler![
             // play_note,
             // stop_note,
-            send_midi, playback, add_note, get_state
+            send_midi, playback, add_note, get_state, rm_note
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

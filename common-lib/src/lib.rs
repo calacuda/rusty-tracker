@@ -104,6 +104,52 @@ impl TrackerState {
         Ok(())
     }
 
+    pub fn rm_note(&mut self, channel: ChannelIndex, row: usize, note_num: usize) -> Result<()> {
+        ensure!(note_num < 4, "lines can only have 4 notes per line");
+
+        let channel = self.channel_len_check(channel)?;
+
+        if self.sequences[channel].len() <= row {
+            for sequence in self.sequences.iter_mut() {
+                for _ in 0..row - sequence.len() {
+                    sequence.push(RowData::default());
+                }
+            }
+        }
+
+        // self.sequences[channel][i].notes[note_num]
+        let mut i = row;
+
+        while Some(MidiNoteCmd::HoldNote) == self.sequences[channel][i].notes[note_num] || i == row
+        {
+            self.sequences[channel][i].notes[note_num] = None;
+
+            i += 1;
+        }
+
+        self.sequences[channel][i].notes[note_num] = None;
+
+        if row > 0 {
+            let mut i = row - 1;
+
+            while Some(MidiNoteCmd::HoldNote) == self.sequences[channel][i].notes[note_num]
+                || i == row - 1
+            {
+                self.sequences[channel][i].notes[note_num] = None;
+
+                if i == 0 {
+                    break;
+                }
+
+                i -= 1;
+            }
+
+            self.sequences[channel][i].notes[note_num] = None;
+        }
+
+        Ok(())
+    }
+
     pub fn empty() -> Self {
         let def: Vec<RowData> = vec![RowData::default()];
 
