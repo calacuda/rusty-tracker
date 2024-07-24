@@ -222,6 +222,8 @@ pub enum PlayerCmd {
     SetPlayingChannels(Channel),
     SetTarget(MidiTarget),
     SetCursor(usize),
+    SetTempo(u64),
+    SetBeat(u64),
 }
 
 pub fn get_cmd_arg_val(arg: CmdArg) -> usize {

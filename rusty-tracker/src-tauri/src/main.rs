@@ -11,14 +11,23 @@ use std::{
     time::{Duration, Instant},
 };
 use synth_lib::{audio::TrackerSynth, init_synth, Note};
-use tauri::{async_runtime::spawn, Manager, State, Window};
+use tauri::{
+    async_runtime::{spawn, JoinHandle},
+    Manager, State, Window,
+};
+// use tauri_sys::window::current_window;
 use tracing::*;
 use tracker_lib::{
-    Channel, ChannelIndex, Cmd, CmdArg, Float, MidiNote, MidiNoteCmd, MidiTarget, PlaybackCmd,
+    Channel, ChannelIndex, Cmd, CmdArg, MidiNote, MidiNoteCmd, MidiTarget, PlaybackCmd,
     PlaybackState, PlayerCmd, TrackerState,
 };
 
 pub const MAX_COL_LEN: usize = 0xFFFF;
+const NANO_MIN: u64 = 60_000_000_000;
+
+struct IO {
+    line_out: JoinHandle<()>,
+}
 
 // #[derive(Serialize, Deserialize, Clone)]
 pub struct Player {
@@ -34,20 +43,29 @@ pub struct Player {
     song: Arc<Mutex<TrackerState>>,
     /// the synth that is used when `self.target` is set to `MidiTarget::BuiltinSynth`.
     synth: Arc<Mutex<TrackerSynth>>,
-    /// time till next event in nano_seconds
+    // /// time till next event in nano_seconds
     // ttne: Mutex<usize>,
     /// the instant that the last beat was processed
     last_event: Instant,
     /// the amount of time between beats
     beat_time: Duration,
+    /// the tempo of playback
+    tempo: u64,
+    /// which beat describes the time between rows
+    beat: u64,
+    // window: Option<Window>,
+    line_out: Sender<usize>,
 }
 
 impl Player {
     pub fn new(
         song: Arc<Mutex<TrackerState>>,
         synth: Arc<Mutex<TrackerSynth>>,
-    ) -> (Self, Sender<PlayerCmd>) {
+    ) -> (Self, (Sender<PlayerCmd>, Receiver<usize>)) {
         let (tx, rx) = unbounded();
+        let (line_tx, line_rx) = unbounded();
+        let tempo = 110;
+        let beat = 4;
 
         (
             Player {
@@ -58,10 +76,13 @@ impl Player {
                 song,
                 // ttne: Mutex::new(0),
                 last_event: Instant::now(),
-                beat_time: Duration::from_nanos((1_000_000_000.0 as Float / (110.0)).round() as u64),
+                beat_time: Duration::from_nanos(NANO_MIN / tempo / beat),
                 synth,
+                tempo,
+                beat,
+                line_out: line_tx,
             },
-            tx,
+            (tx, line_rx),
         )
     }
 
@@ -90,6 +111,8 @@ impl Player {
     }
 
     fn send_cmd(&mut self, _command: (Cmd, Option<CmdArg>), _channel: usize) {
+        // TODO: implement this
+
         // let note = Note::from(note);
         //
         // match self.target {
@@ -98,7 +121,26 @@ impl Player {
         //     }
         //     _ => error!("not implemented yet"),
         // }
+
         warn!("commands not implemented yet");
+    }
+
+    fn recalc_beat_time(&mut self) {
+        self.beat_time = Duration::from_nanos(NANO_MIN / self.tempo / self.beat);
+    }
+
+    fn set_tempo(&mut self, tempo: u64) {
+        if tempo != self.tempo {
+            self.tempo = tempo;
+            self.recalc_beat_time();
+        }
+    }
+
+    fn set_beat(&mut self, beat: u64) {
+        if beat != self.beat {
+            self.beat = beat;
+            self.recalc_beat_time();
+        }
     }
 }
 
@@ -108,7 +150,7 @@ impl Future for Player {
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
         let s = Pin::<&mut Player>::into_inner(self);
 
-        // TODO: read from self.ipc and do the thing it says
+        // read from self.ipc and do the thing it says
         if let Ok(cmd_msg) = s.ipc.try_recv() {
             match cmd_msg {
                 PlayerCmd::VolumeSet((vol, channel)) => {
@@ -142,6 +184,8 @@ impl Future for Player {
                         error!("can't set cursor location when there is no cursor location to set.")
                     }
                 },
+                PlayerCmd::SetTempo(tempo) => s.set_tempo(tempo),
+                PlayerCmd::SetBeat(beat) => s.set_beat(beat),
             }
         }
 
@@ -150,6 +194,11 @@ impl Future for Player {
 
             if Instant::now().duration_since(s.last_event) >= s.beat_time {
                 s.last_event = Instant::now();
+
+                s.line_out.send(line_i);
+                // .clone()
+                // .map(|window| window.emit_all("playhead", line_i).unwrap());
+
                 s.state = PlaybackState::Playing(
                     (line_i + 1) % s.song.lock().unwrap().sequences[0].len(),
                 );
@@ -284,10 +333,25 @@ fn rm_note(
 //     // warn!("setting the play head location on the back end is not yet implemented");
 // }
 
+async fn line_out(window: Window, line_rx: State<'_, Receiver<usize>>) {
+    loop {
+        while line_rx.len() > 1 {
+            line_rx.recv().unwrap();
+        }
+
+        while let Ok(ln) = line_rx.recv() {
+            window.emit_all("playhead", ln).unwrap();
+        }
+    }
+}
+
 #[tauri::command(rename_all = "snake_case")]
 fn playback(
     // player: State<'_, Arc<Mutex<Player>>>,
+    window: Window,
     player_ipc: State<'_, Arc<Mutex<Sender<PlayerCmd>>>>,
+    io_threads: State<'_, Arc<Mutex<IO>>>,
+    line_rx: State<'_, Receiver<usize>>,
     playback_cmd: PlaybackCmd,
 ) {
     // warn!("playback is not yet enabled on the back end is not yet implemented");
@@ -295,6 +359,8 @@ fn playback(
         PlaybackCmd::Play => {
             if let Err(e) = player_ipc.lock().unwrap().send(PlayerCmd::ResumePlayback) {
                 error!("failed to play: {e}");
+            } else {
+                io_threads.lock().unwrap().line_out = spawn(line_out(window, line_rx.clone()));
             };
         }
         PlaybackCmd::Stop => {
@@ -308,6 +374,20 @@ fn playback(
             }
         }
         _ => warn!("playback is not yet enabled on the back end is not yet implemented"),
+    }
+}
+
+#[tauri::command(rename_all = "snake_case")]
+fn set_tempo(player: State<'_, Arc<Mutex<Sender<PlayerCmd>>>>, tempo: u64) {
+    if tempo > 1 {
+        let _ = player.lock().unwrap().send(PlayerCmd::SetTempo(tempo));
+    }
+}
+
+#[tauri::command(rename_all = "snake_case")]
+fn set_beat(player: State<'_, Arc<Mutex<Sender<PlayerCmd>>>>, beat: u64) {
+    if beat > 1 {
+        let _ = player.lock().unwrap().send(PlayerCmd::SetBeat(beat));
     }
 }
 
@@ -340,18 +420,24 @@ fn main() -> Result<()> {
     let state = Arc::new(Mutex::new(TrackerState::default()));
 
     info!("initializing player");
-    let (player, player_ipc) = Player::new(state.clone(), synth.clone());
+    let (player, (player_ipc, line_rx)) = Player::new(state.clone(), synth.clone());
+    let player_ipc = Arc::new(Mutex::new(player_ipc));
     let _midi_thread = spawn(player);
+    let io = Arc::new(Mutex::new(IO {
+        line_out: spawn(async move { () }),
+    }));
 
     tauri::Builder::default()
         .manage(synth)
         // .manage(Arc::new(Mutex::new(player)))
         .manage(state)
-        .manage(Arc::new(Mutex::new(player_ipc)))
+        .manage(player_ipc)
+        .manage(io)
+        .manage(line_rx)
         .invoke_handler(tauri::generate_handler![
             // play_note,
             // stop_note,
-            send_midi, playback, add_note, get_state, rm_note
+            send_midi, playback, add_note, get_state, rm_note, set_tempo, set_beat
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -82,7 +82,7 @@ fn note_to_name(midi_note: MidiNoteCmd) -> String {
 }
 
 fn cmd_to_display(cmd: Cmd, arg: Option<CmdArg>) -> String {
-    // TODO: display only the first two decimal points of arg.
+    // NOTE: display only the first two decimal points of arg.
     format!(
         "{}{}",
         cmd,
