@@ -217,11 +217,25 @@ fn NoteDisplay(
             "bg-sapphire"
         } else if let Some(store) = get_storage.get()
             && get_mode.get() == Mode::Edit
-            && store.display_loc.1 == this_loc.1
-            && ((this_loc.0 + start_row.get() <= store.display_loc.0
-                && this_loc.0 >= store.end_loc.0)
-                || (this_loc.0 + start_row.get() >= store.display_loc.0
-                    && this_loc.0 <= store.end_loc.0))
+            && store.loc.1 == this_loc.1
+            && ((this_loc.0
+                < if store.n_lines > 0 {
+                    store.loc.0 + store.n_lines as usize
+                } else {
+                    store.loc.0 - (store.n_lines * -1) as usize
+                }
+                && this_loc.0 >= store.loc.0 - start_row.get())
+                || (this_loc.0
+                    > if store.n_lines > 0 {
+                        store.loc.0 + store.n_lines as usize
+                    } else {
+                        store.loc.0 - (store.n_lines * -1) as usize
+                    }
+                    && this_loc.0 <= store.loc.0 - start_row.get()))
+        // && ((this_loc.0 + start_row.get() <= store.display_loc.0
+        //     && this_loc.0 >= store.end_loc.0)
+        //     || (this_loc.0 + start_row.get() >= store.display_loc.0
+        //         && this_loc.0 <= store.end_loc.0))
         {
             // log!("making box green. {:?} - {:?}", this_loc, store);
             "bg-green"

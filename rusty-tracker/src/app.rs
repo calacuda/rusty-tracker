@@ -111,8 +111,9 @@ struct RmNoteArgs {
 )]
 pub struct NoteSetStorage {
     note: MidiNote,
-    end_loc: (usize, usize),
-    display_loc: (usize, usize),
+    loc: (usize, usize),
+    n_lines: i64,
+    // display_loc: (usize, usize),
 }
 
 async fn listen_on_state_change_event(event_writer: WriteSignal<TrackerState>) {
@@ -173,9 +174,9 @@ pub fn App() -> impl IntoView {
     spawn_local(listen_on_playhead_event(set_playhead));
 
     create_effect(move |_| {
-        let n_lines = num_lines(font_size.get().into());
+        let n_lines = num_lines(font_size.get_untracked().into());
 
-        if (playhead.get() - start_row.get()) >= (n_lines as Float * 0.75) as usize {
+        if (playhead.get() - start_row.get_untracked()) >= (n_lines as Float * 0.75) as usize {
             set_start_row.update(|row| *row += n_lines / 2);
         }
     });
@@ -230,7 +231,7 @@ pub fn App() -> impl IntoView {
             Mode::Edit => {
                 set_note_storage.update(|storage| {
                     if let Some(selected) = storage {
-                        selected.end_loc = loc
+                        selected.n_lines = loc.0 as i64 - selected.loc.0 as i64;
                     }
                 });
             }
@@ -324,21 +325,33 @@ pub fn App() -> impl IntoView {
     let set_backend_note = move || {
         if let Some(note) = note_storage.get() {
             let midi_code = note.note;
-            let (start_loc, stop_loc) = if note.display_loc.0 < note.end_loc.0 {
-                (note.display_loc, note.end_loc)
+            // let (start_loc, stop_loc) = if note.display_loc.0 < note.end_loc.0 {
+            //     (note.display_loc, note.end_loc)
+            // } else {
+            //     (note.end_loc, note.display_loc)
+            // };
+            let start_loc = note.loc;
+            let stop_loc = if note.n_lines > 0 {
+                note.loc.0 + note.n_lines as usize
             } else {
-                (note.end_loc, note.display_loc)
-            };
+                note.loc.0 - (note.n_lines * -1) as usize
+            } + start_row.get();
             // let state = tracker_state.get();
             let channel = start_loc.1 / 6;
             let note_num = start_loc.1 % 6;
+
+            let (start_row, stop_row) = if stop_loc < start_loc.0 {
+                (stop_loc, start_loc.0)
+            } else {
+                (start_loc.0, stop_loc)
+            };
 
             let args_play = AddNoteArgs {
                 note: midi_code,
                 channel: channel as ChannelIndex,
                 note_number: note_num,
-                start: start_loc.0 + start_row.get(),
-                stop: stop_loc.0,
+                start: start_row,
+                stop: stop_row,
             };
 
             warn!("sending note to backend");
@@ -485,9 +498,20 @@ pub fn App() -> impl IntoView {
         }
 
         if mode.get() == Mode::Edit {
-            set_note_storage.update(|storage| if let Some(selected) = storage && selected.end_loc.0 > 0 {
-                selected.end_loc.0 -= 1
-            });
+            set_note_storage.update(|storage|
+                // if let Some(selected) = storage
+                //     && !(selected.n_lines < 0
+                //         && (selected.n_lines as usize > selected.loc.0 ))
+                //     && !(selected.n_lines > 0
+                //         && (selected.n_lines as usize > (LINE_LEN - selected.0)))
+                // {
+                //     (*storage).unwrap().n_lines -= 1
+                // }
+                if let Some(selected) = storage  {
+                    (*storage).unwrap().n_lines = (location.get_untracked().0 as i64 + start_row.get() as i64) - selected.loc.0 as i64;
+                }
+
+            );
         }
 
         log!("shift w has been pressed");
@@ -502,9 +526,22 @@ pub fn App() -> impl IntoView {
         }
 
         if mode.get() == Mode::Edit {
-            set_note_storage.update(|storage| if let Some(selected) = storage && selected.end_loc.0 > 0 {
-                selected.end_loc.0 += 1
-            });
+            set_note_storage.update(|storage| {
+                    // if let Some(selected) = storage
+                    //     && !(selected.n_lines < 0
+                    //         && (selected.n_lines as usize > selected.loc.0 ))
+                    //     && !(selected.n_lines > 0
+                    //         && (selected.n_lines as usize > (LINE_LEN - selected.0)))
+                    // {
+                    //     (*storage).unwrap().n_lines -= 1
+                    // }
+                    if let Some(selected) = storage  {
+                        log!("{} - {} = {}", location.get_untracked().0 as i64, selected.loc.0 as i64, location.get_untracked().0 as i64 - selected.loc.0 as i64);
+                        (*storage).unwrap().n_lines = (location.get_untracked().0 as i64 + start_row.get() as i64) - selected.loc.0 as i64;
+
+                    }
+                }
+            );
         }
 
         log!("shift s has been pressed");
@@ -597,7 +634,7 @@ pub fn App() -> impl IntoView {
                 log!("settings scope to edit");
                 // toggle_scope.call("edit".to_string());
                 set_mode.set(Mode::Edit);
-                set_note_storage.set(Some(NoteSetStorage { note: 0, end_loc: (loc.0 + 1 + start_row.get(), loc.1), display_loc: (loc.0 + start_row.get(), loc.1) }));
+                set_note_storage.set(Some(NoteSetStorage { note: 0, loc: (loc.0 + start_row.get_untracked(), loc.1), n_lines: 1 }));
                 cursor_down();
             }
             Mode::Edit => {
