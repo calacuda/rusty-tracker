@@ -8,12 +8,13 @@ use leptos_hotkeys::{
     HotkeysContext,
 };
 use leptos_use::{use_element_size, UseElementSizeReturn};
+use math::mo;
 use sequence::Sequence;
 use serde::{Deserialize, Serialize};
 use serde_wasm_bindgen::to_value;
 use std::fmt::Display;
 use tauri_sys::event;
-use tracker_lib::{ChannelIndex, MidiNote, MidiNoteCmd, PlaybackCmd, TrackerState};
+use tracker_lib::{ChannelIndex, MidiNote, MidiNoteCmd, PlaybackCmd, TrackerState, LINE_LEN};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
@@ -133,6 +134,7 @@ pub fn App() -> impl IntoView {
     let (tracker_state, set_tracker_state) = create_signal(TrackerState::empty());
     #[allow(unused_variables)]
     let (font_size, set_font_size) = create_signal(FontSize::Base);
+    let (start_row, set_start_row) = create_signal(0);
     let (note_storage, set_note_storage) = create_signal::<Option<NoteSetStorage>>(None);
     let main_el = create_node_ref::<html::Main>();
     let HotkeysContext { .. } = provide_hotkeys_context(main_el, false, scopes!());
@@ -182,7 +184,7 @@ pub fn App() -> impl IntoView {
         );
 
         let args = GetStateArgs {
-            start_row: 0,
+            start_row: start_row.get(),
             n_rows,
         };
 
@@ -227,7 +229,9 @@ pub fn App() -> impl IntoView {
     let state_size = move || tracker_state.get().sequences[0].len();
 
     let line_numbers = move || {
-        (0..state_size())
+        let start_row = start_row.get();
+
+        (start_row..start_row + state_size())
             .into_iter()
             .map(|i| {
                 let line_num = format!("{:04X}", i);
@@ -260,8 +264,8 @@ pub fn App() -> impl IntoView {
 
         view! {
             <div class="justify-center text-center col-span-1 grid-flow-row p-2">
-                <div class="grid grid-flow-col"> <br/> </div>
-                <div class="grid grid-flow-col"> <br/> </div>
+                <div class=""> <br/> </div>
+                <div class=""> <br/> </div>
                 { line_nums.collect_view() }
             </div>
         }
@@ -278,7 +282,7 @@ pub fn App() -> impl IntoView {
             .map(|i| {
                 view! {
                     // <Sequence state=tracker_state set_state=set_tracker_state i=i/>
-                    <Sequence state=tracker_state i=i get_loc=location get_mode=mode set_loc=set_location get_storage=note_storage/>
+                    <Sequence state=tracker_state i=i get_loc=location get_mode=mode set_loc=set_location get_storage=note_storage start_row=start_row/>
                 }
             })
             .collect_view()
@@ -301,7 +305,7 @@ pub fn App() -> impl IntoView {
                 channel: channel as ChannelIndex,
                 note_number: note_num,
                 start: start_loc.0,
-                stop: stop_loc.0,
+                stop: stop_loc.0 + start_row.get(),
             };
 
             warn!("sending note to backend");
@@ -325,7 +329,7 @@ pub fn App() -> impl IntoView {
         let args_play = RmNoteArgs {
             channel: channel as ChannelIndex,
             note_number: note_num,
-            row: loc.0,
+            row: loc.0 + start_row.get(),
         };
 
         warn!("removing note on backend");
@@ -403,6 +407,7 @@ pub fn App() -> impl IntoView {
 
     let cursor_up = move || {
         // set_count.update(|c| *c += 1);
+        // TODO: if in edit mode, add check if the new cell is already populated.
         set_location.update(|loc| {
             // if let Some((row, _)) = loc {
             if loc.0 == 0 {
@@ -416,6 +421,7 @@ pub fn App() -> impl IntoView {
 
     let cursor_down = move || {
         // set_count.update(|c| *c += 1);
+        // TODO: if in edit mode, add check if the new cell is already populated.
         set_location.update(|loc| {
             // if let Some((row, _)) = loc {
             if loc.0 == num_lines(font_size.get_untracked().into()) {
@@ -441,6 +447,40 @@ pub fn App() -> impl IntoView {
         }
 
         log!("s has been pressed");
+    });
+
+    use_hotkeys!(("shiftleft+keyw") => move |_| {
+        if mode.get() == Mode::Move || mode.get() == Mode::Edit {
+            set_start_row.update(|row| if *row != 0 { *row = *row - 1 } else { *row = LINE_LEN - num_lines(font_size.get().into()) });
+
+            get_state();
+            cursor_down();
+        }
+
+        if mode.get() == Mode::Edit {
+            set_note_storage.update(|storage| if let Some(selected) = storage && selected.end_loc.0 > 0 {
+                selected.end_loc.0 -= 1
+            });
+        }
+
+        log!("shift w has been pressed");
+    });
+
+    use_hotkeys!(("shiftleft+keys") => move |_| {
+        if mode.get() == Mode::Move || mode.get() == Mode::Edit {
+            set_start_row.update(|row| if *row != LINE_LEN - num_lines(font_size.get().into()) { *row = *row + 1 } else { *row = 0 });
+
+            get_state();
+            cursor_up();
+        }
+
+        if mode.get() == Mode::Edit {
+            set_note_storage.update(|storage| if let Some(selected) = storage && selected.end_loc.0 > 0 {
+                selected.end_loc.0 += 1
+            });
+        }
+
+        log!("shift s has been pressed");
     });
 
     let max_col = (4 + 2) * 4;
@@ -530,7 +570,7 @@ pub fn App() -> impl IntoView {
                 log!("settings scope to edit");
                 // toggle_scope.call("edit".to_string());
                 set_mode.set(Mode::Edit);
-                set_note_storage.set(Some(NoteSetStorage { note: 0, end_loc: (loc.0 + 1, loc.1), display_loc: loc }));
+                set_note_storage.set(Some(NoteSetStorage { note: 0, end_loc: (loc.0 + 1 + start_row.get(), loc.1), display_loc: (loc.0 + start_row.get(), loc.1) }));
                 cursor_down();
             }
             Mode::Edit => {

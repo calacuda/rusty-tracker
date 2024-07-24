@@ -10,6 +10,7 @@ pub fn Sequence(
     get_storage: ReadSignal<Option<NoteSetStorage>>,
     set_loc: WriteSignal<(usize, usize)>,
     get_mode: ReadSignal<Mode>,
+    start_row: ReadSignal<usize>,
 ) -> impl IntoView {
     if !state.get_untracked().sequences[i].is_empty() {
         let tmp_state = state.get_untracked().sequences[i][0];
@@ -39,7 +40,16 @@ pub fn Sequence(
                         log!("generating row {row_i:0X} from sequence {i}");
 
                         view! {
-                            <SequenceRow dat=memo sequence_i=i row_i=row_i get_loc=get_loc get_mode=get_mode set_loc=set_loc get_storage=get_storage/>
+                            <SequenceRow
+                                dat=memo
+                                sequence_i=i
+                                row_i=row_i
+                                get_loc=get_loc
+                                get_mode=get_mode
+                                set_loc=set_loc
+                                get_storage=get_storage
+                                start_row=start_row
+                            />
                         }
                     }
                 />
@@ -92,6 +102,7 @@ pub fn SequenceRow(
     get_storage: ReadSignal<Option<NoteSetStorage>>,
     set_loc: WriteSignal<(usize, usize)>,
     get_mode: ReadSignal<Mode>,
+    start_row: ReadSignal<usize>,
 ) -> impl IntoView {
     view! {
         <div class="grid grid-flow-col">
@@ -109,6 +120,7 @@ pub fn SequenceRow(
                             get_mode=get_mode
                             set_loc=set_loc
                             get_storage=get_storage
+                            start_row=start_row
                         />
                     }
                 }
@@ -177,6 +189,7 @@ fn NoteDisplay(
     get_storage: ReadSignal<Option<NoteSetStorage>>,
     set_loc: WriteSignal<(usize, usize)>,
     get_mode: ReadSignal<Mode>,
+    start_row: ReadSignal<usize>,
 ) -> impl IntoView {
     let null_str = "---";
 
@@ -205,8 +218,10 @@ fn NoteDisplay(
         } else if let Some(store) = get_storage.get()
             && get_mode.get() == Mode::Edit
             && store.display_loc.1 == this_loc.1
-            && ((this_loc.0 <= store.display_loc.0 && this_loc.0 >= store.end_loc.0)
-                || (this_loc.0 >= store.display_loc.0 && this_loc.0 <= store.end_loc.0))
+            && ((this_loc.0 + start_row.get() <= store.display_loc.0
+                && this_loc.0 >= store.end_loc.0)
+                || (this_loc.0 + start_row.get() >= store.display_loc.0
+                    && this_loc.0 <= store.end_loc.0))
         {
             // log!("making box green. {:?} - {:?}", this_loc, store);
             "bg-green"
