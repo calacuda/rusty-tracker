@@ -145,12 +145,6 @@ pub fn App() -> impl IntoView {
     let (playhead, set_playhead) = create_signal(0);
     let main_el = create_node_ref::<html::Main>();
     let HotkeysContext { .. } = provide_hotkeys_context(main_el, false, scopes!());
-    // #[allow(unused_variables)]
-    // let HotkeysContext {
-    //     enable_scope,
-    //     disable_scope,
-    //     ..
-    // } = use_hotkeys_context();
 
     let header_el = create_node_ref::<html::Div>();
 
@@ -257,9 +251,15 @@ pub fn App() -> impl IntoView {
                         });
                     };
 
+                    let class = if ln == playhead.get() {
+                        "bg-maroon"
+                    } else {
+                        ""
+                    };
+
                     view! {
-                        <div>
-                            <button class="" on:click=click>
+                        <div class=class>
+                            <button on:click=click>
                                 { line_num }
                             </button>
                         </div>
@@ -640,7 +640,7 @@ pub fn App() -> impl IntoView {
                 <div class="col-span-3 grid-flow-row p-2">
                     <div class=""> <br/> </div>
                     <div class=""> <br/> </div>
-                    <SideCar/>
+                    <SideCar set_playhead/>
                 </div>
             </div>
         </main>

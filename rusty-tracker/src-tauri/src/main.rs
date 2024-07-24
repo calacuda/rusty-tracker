@@ -195,7 +195,10 @@ impl Future for Player {
             if Instant::now().duration_since(s.last_event) >= s.beat_time {
                 s.last_event = Instant::now();
 
-                s.line_out.send(line_i);
+                if let Err(e) = s.line_out.send(line_i) {
+                    error!("could not send line num over internal crossbeam channel. incountered error: {e}");
+                };
+
                 // .clone()
                 // .map(|window| window.emit_all("playhead", line_i).unwrap());
 
@@ -333,8 +336,9 @@ fn rm_note(
 //     // warn!("setting the play head location on the back end is not yet implemented");
 // }
 
-async fn line_out(window: Window, line_rx: State<'_, Receiver<usize>>) {
+async fn line_out(window: Window, line_rx: Receiver<usize>) {
     loop {
+        // might not be nessesary
         while line_rx.len() > 1 {
             line_rx.recv().unwrap();
         }
@@ -360,7 +364,8 @@ fn playback(
             if let Err(e) = player_ipc.lock().unwrap().send(PlayerCmd::ResumePlayback) {
                 error!("failed to play: {e}");
             } else {
-                io_threads.lock().unwrap().line_out = spawn(line_out(window, line_rx.clone()));
+                let line_rx = line_rx.inner().clone();
+                io_threads.lock().unwrap().line_out = spawn(line_out(window, line_rx));
             };
         }
         PlaybackCmd::Stop => {

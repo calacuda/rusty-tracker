@@ -57,7 +57,7 @@ pub fn Header() -> impl IntoView {
 }
 
 #[component]
-pub fn SideCar() -> impl IntoView {
+pub fn SideCar(set_playhead: WriteSignal<usize>) -> impl IntoView {
     let (tempo, set_tempo) = create_signal(110);
     let (beat, set_beat) = create_signal(4);
 
@@ -132,6 +132,7 @@ pub fn SideCar() -> impl IntoView {
                     spawn_local(async move {
                         log!("stoping playback");
                         invoke("playback", to_value(&args).unwrap()).await;
+                        set_playhead.set(0);
                     });
                 }
             >

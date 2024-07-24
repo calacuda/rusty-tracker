@@ -655,6 +655,11 @@ video {
   background-color: rgba(var(--ctp-green), var(--tw-bg-opacity));
 }
 
+.bg-maroon {
+  --tw-bg-opacity: 1;
+  background-color: rgba(var(--ctp-maroon), var(--tw-bg-opacity));
+}
+
 .bg-peach {
   --tw-bg-opacity: 1;
   background-color: rgba(var(--ctp-peach), var(--tw-bg-opacity));
