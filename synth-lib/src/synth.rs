@@ -1,6 +1,6 @@
 use anyhow::Result;
 use synth_8080::{common::Module, midi_osc::MidiOsc, Float};
-use synth_8080_lib::notes::Note;
+use synth_8080_lib::{notes::Note, OscType};
 
 pub struct Synth {
     pub synth_num: usize,
@@ -40,5 +40,9 @@ impl Synth {
         self.synth.stop_note(note)?;
 
         Ok(())
+    }
+
+    pub fn set_waveform(&mut self, waveform: OscType) {
+        self.synth.set_wave_form(waveform);
     }
 }

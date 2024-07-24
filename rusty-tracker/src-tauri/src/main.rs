@@ -19,7 +19,7 @@ use tauri::{
 use tracing::*;
 use tracker_lib::{
     Channel, ChannelIndex, Cmd, CmdArg, MidiNote, MidiNoteCmd, MidiTarget, PlaybackCmd,
-    PlaybackState, PlayerCmd, TrackerState,
+    PlaybackState, PlayerCmd, TrackerState, Wavetable,
 };
 
 pub const MAX_COL_LEN: usize = 0xFFFF;
@@ -186,6 +186,17 @@ impl Future for Player {
                 },
                 PlayerCmd::SetTempo(tempo) => s.set_tempo(tempo),
                 PlayerCmd::SetBeat(beat) => s.set_beat(beat),
+                PlayerCmd::SetWavetable((channel, Wavetable::BuiltIn(waveform_type))) => {
+                    if let Err(e) = s.synth.lock().unwrap().set_waveform(channel, waveform_type) {
+                        error!(
+                            "atempt to set channel {channel}'s synth to waveform {waveform_type:?} resulted in error, {e}"
+                        );
+                    }
+                }
+                PlayerCmd::SetWavetable((_channel, Wavetable::FromFile(_table_file))) => {
+                    // TODO: add loading of wave table from file.
+                    todo!("load wave table from file")
+                }
             }
         }
 

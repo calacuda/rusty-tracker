@@ -4,7 +4,7 @@ use rayon::prelude::*;
 use rodio::{OutputStream, Source};
 use std::sync::{Arc, Mutex};
 use synth_8080::{Float, SAMPLE_RATE};
-use synth_8080_lib::notes::Note;
+use synth_8080_lib::{notes::Note, OscType};
 use tracing::*;
 use tracker_lib::ChannelIndex;
 
@@ -83,6 +83,7 @@ unsafe impl Send for AudioOutputSync {}
 pub struct TrackerSynth {
     pub synths: Vec<Synth>,
     discount: Float,
+    volume: Float,
 }
 
 impl Default for TrackerSynth {
@@ -96,8 +97,13 @@ impl TrackerSynth {
     pub fn new(n: usize) -> Self {
         let synths = (0..n).into_iter().map(|i| Synth::new(i)).collect();
         let discount = 1.0 / (n as Float);
+        let volume = 1.0;
 
-        Self { synths, discount }
+        Self {
+            synths,
+            discount,
+            volume,
+        }
     }
 
     pub fn get_sample(&mut self) -> Float {
@@ -107,7 +113,7 @@ impl TrackerSynth {
             .map(|synth| synth.get_sample())
             .sum();
 
-        (sample * self.discount).tanh()
+        (sample * self.discount * self.volume).tanh()
     }
 
     fn channel_len_check(&mut self, channel: usize) -> Result<()> {
@@ -157,11 +163,24 @@ impl TrackerSynth {
     //     }
     // }
 
-    pub fn set_volume(&mut self, volume: Float, channel: ChannelIndex) -> Result<()> {
+    pub fn set_volume(&mut self, volume: Float, channel: Option<ChannelIndex>) -> Result<()> {
+        if let Some(channel) = channel {
+            let channel = channel as usize;
+
+            self.channel_len_check(channel)?;
+            self.synths[channel].vol = volume;
+        } else {
+            self.volume = volume;
+        }
+
+        Ok(())
+    }
+
+    pub fn set_waveform(&mut self, channel: ChannelIndex, waveform: OscType) -> Result<()> {
         let channel = channel as usize;
 
         self.channel_len_check(channel)?;
-        self.synths[channel].vol = volume;
+        self.synths[channel].set_waveform(waveform);
 
         Ok(())
     }

@@ -8,7 +8,9 @@ use serde::{Deserialize, Serialize};
 use serde_wasm_bindgen::to_value;
 use std::fmt::Display;
 use tauri_sys::event;
-use tracker_lib::{ChannelIndex, MidiNote, MidiNoteCmd, PlaybackCmd, TrackerState, LINE_LEN};
+use tracker_lib::{
+    ChannelIndex, Float, MidiNote, MidiNoteCmd, PlaybackCmd, TrackerState, LINE_LEN,
+};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
@@ -170,6 +172,14 @@ pub fn App() -> impl IntoView {
     spawn_local(listen_on_state_change_event(set_tracker_state));
     spawn_local(listen_on_playhead_event(set_playhead));
 
+    create_effect(move |_| {
+        let n_lines = num_lines(font_size.get().into());
+
+        if (playhead.get() - start_row.get()) >= (n_lines as Float * 0.75) as usize {
+            set_start_row.update(|row| *row += n_lines / 2);
+        }
+    });
+
     let get_state = move || {
         // let _width = width.get();
         // let size = font_size.get().into();
@@ -231,11 +241,11 @@ pub fn App() -> impl IntoView {
     let state_size = move || tracker_state.get().sequences[0].len();
 
     let line_numbers = move || {
-        let start_row = start_row.get();
+        let sr = start_row.get();
 
         view! {
             <For
-                each=move || (start_row..start_row + state_size()).into_iter()
+                each=move || (sr..sr + state_size()).into_iter()
                 key=move |ln| (*ln, *ln == playhead.get())
                 children=move |ln| {
                     let line_num = format!("{:04X}", ln);
@@ -286,18 +296,29 @@ pub fn App() -> impl IntoView {
     let get_start = create_memo(move |_| tracker_state.get().display_start);
 
     let get_sequences = move || {
-        let start = get_start.get_untracked();
+        let start = get_start.get();
         let _n_lines = state_size();
 
-        (start..start + 4)
-            .into_iter()
-            .map(|i| {
-                view! {
-                    // <Sequence state=tracker_state set_state=set_tracker_state i=i/>
-                    <Sequence state=tracker_state i=i get_loc=location get_mode=mode set_loc=set_location get_storage=note_storage start_row=start_row/>
+        // (start..start + 4)
+        //     .into_iter()
+        //     .map(|i| {
+        //         view! {
+        //             // <Sequence state=tracker_state set_state=set_tracker_state i=i/>
+        //             <Sequence state=tracker_state i=i get_loc=location get_mode=mode set_loc=set_location get_storage=note_storage start_row=start_row/>
+        //         }
+        //     })
+        //     .collect_view()
+        view! {
+            <For
+                each=move || (start..start + 4)
+                key=move |i| *i
+                children=move |i| {
+                    view! {
+                        <Sequence state=tracker_state i=i get_loc=location get_mode=mode set_loc=set_location get_storage=note_storage start_row=start_row/>
+                    }
                 }
-            })
-            .collect_view()
+            />
+        }
     };
 
     let set_backend_note = move || {
@@ -316,8 +337,8 @@ pub fn App() -> impl IntoView {
                 note: midi_code,
                 channel: channel as ChannelIndex,
                 note_number: note_num,
-                start: start_loc.0,
-                stop: stop_loc.0 + start_row.get(),
+                start: start_loc.0 + start_row.get(),
+                stop: stop_loc.0,
             };
 
             warn!("sending note to backend");
@@ -440,7 +461,7 @@ pub fn App() -> impl IntoView {
     };
 
     use_hotkeys!(("keyw") => move |_| {
-        if mode.get() == Mode::Move {
+        if mode.get() == Mode::Move || mode.get() == Mode::Edit {
             cursor_up()
         }
 
@@ -448,7 +469,7 @@ pub fn App() -> impl IntoView {
     });
 
     use_hotkeys!(("keys") => move |_| {
-        if mode.get() == Mode::Move {
+        if mode.get() == Mode::Move || mode.get() == Mode::Edit {
             cursor_down()
         }
 
@@ -525,25 +546,25 @@ pub fn App() -> impl IntoView {
         }
     });
 
-    use_hotkeys!(("keyw") => move |_| {
-        if mode.get() == Mode::Edit {
-            set_note_storage.update(|storage| if let Some(selected) = storage && selected.end_loc.0 > 0 {
-                selected.end_loc.0 -= 1
-            });
-
-            cursor_up();
-        }
-    });
-
-    use_hotkeys!(("keys") => move |_| {
-        if mode.get() == Mode::Edit {
-            set_note_storage.update(|storage| if let Some(selected) = storage {
-                selected.end_loc.0 += 1
-            });
-
-            cursor_down();
-        }
-    });
+    // use_hotkeys!(("keyw") => move |_| {
+    //     if mode.get() == Mode::Edit {
+    //         // set_note_storage.update(|storage| if let Some(selected) = storage && selected.end_loc.0 > 0 {
+    //         //     selected.end_loc.0 -= 1
+    //         // });
+    //
+    //         cursor_up();
+    //     }
+    // });
+    //
+    // use_hotkeys!(("keys") => move |_| {
+    //     if mode.get() == Mode::Edit {
+    //         // set_note_storage.update(|storage| if let Some(selected) = storage {
+    //         //     selected.end_loc.0 += 1
+    //         // });
+    //
+    //         cursor_down();
+    //     }
+    // });
 
     use_hotkeys!(("Escape", "*") => move |_| {
         log!("Escape key has been pressed");
@@ -571,7 +592,7 @@ pub fn App() -> impl IntoView {
     use_hotkeys!(("Enter", "*") => move |_| {
         match mode.get() {
             Mode::Move => {
-                let loc = location.get();
+                let loc = location.get_untracked();
 
                 log!("settings scope to edit");
                 // toggle_scope.call("edit".to_string());

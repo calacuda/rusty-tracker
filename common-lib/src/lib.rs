@@ -1,5 +1,8 @@
+use std::path::PathBuf;
+
 use anyhow::{bail, ensure, Result};
 use serde::{Deserialize, Serialize};
+use synth_8080_lib::OscType;
 pub use synth_8080_lib::{notes::Note, Float};
 
 #[cfg(feature = "bevy")]
@@ -211,11 +214,17 @@ pub enum Channel {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+pub enum Wavetable {
+    BuiltIn(OscType),
+    FromFile(PathBuf),
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum PlayerCmd {
     // PlayNote(MidiNote),
     // StopNote(MidiNote),
     // ExecCmd((Cmd, Option<CmdArg>)),
-    VolumeSet((Float, ChannelIndex)),
+    VolumeSet((Float, Option<ChannelIndex>)),
     PausePlayback,
     ResumePlayback,
     StopPlayback,
@@ -224,6 +233,7 @@ pub enum PlayerCmd {
     SetCursor(usize),
     SetTempo(u64),
     SetBeat(u64),
+    SetWavetable((ChannelIndex, Wavetable)),
 }
 
 pub fn get_cmd_arg_val(arg: CmdArg) -> usize {

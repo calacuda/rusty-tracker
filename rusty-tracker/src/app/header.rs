@@ -154,6 +154,9 @@ pub fn SideCar(set_playhead: WriteSignal<usize>) -> impl IntoView {
             </div>
         </div>
         // wave table selection & what note is playing on what track
+        <div class="grid grid-flow-col gap-x-2">
+            // <For />
+        </div>
         // spectrograph
         // waveform analyzer
     }
