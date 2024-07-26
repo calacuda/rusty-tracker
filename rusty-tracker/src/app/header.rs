@@ -70,6 +70,7 @@ pub fn SideCar(set_playhead: WriteSignal<usize>) -> impl IntoView {
         // wave table selection & what note is playing on what track
         <ActivityMonitor/>
         // spectrograph
+        // <Spectrograph/>
         // waveform analyzer
     }
 }
