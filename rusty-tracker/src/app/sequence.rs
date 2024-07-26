@@ -1,6 +1,6 @@
 use crate::{Mode, NoteSetStorage};
 use leptos::{logging::*, *};
-use tracker_lib::{get_cmd_arg_val, Cmd, CmdArg, MidiNoteCmd, RowData, TrackerState};
+use tracker_lib::{get_cmd_arg_val, Cmd, CmdArg, MidiNote, MidiNoteCmd, RowData, TrackerState};
 
 #[component]
 pub fn Sequence(
@@ -63,13 +63,7 @@ pub fn Sequence(
     }
 }
 
-fn note_to_name(midi_note: MidiNoteCmd) -> String {
-    let midi_note = match midi_note {
-        MidiNoteCmd::PlayNote(note) => note,
-        MidiNoteCmd::StopNote(note) => note,
-        MidiNoteCmd::HoldNote => return "|||".into(),
-    };
-
+pub fn note_to_display(midi_note: MidiNote) -> String {
     let note_name_i = midi_note % 12;
     let octave = midi_note / 12;
 
@@ -79,6 +73,16 @@ fn note_to_name(midi_note: MidiNoteCmd) -> String {
     let note_name = note_names[note_name_i as usize];
 
     format!("{note_name}{octave:X}")
+}
+
+fn note_to_name(midi_note: MidiNoteCmd) -> String {
+    let midi_note = match midi_note {
+        MidiNoteCmd::PlayNote(note) => note,
+        MidiNoteCmd::StopNote(note) => note,
+        MidiNoteCmd::HoldNote => return "|||".into(),
+    };
+
+    note_to_display(midi_note)
 }
 
 fn cmd_to_display(cmd: Cmd, arg: Option<CmdArg>) -> String {
@@ -237,7 +241,6 @@ fn NoteDisplay(
         //     || (this_loc.0 + start_row.get() >= store.display_loc.0
         //         && this_loc.0 <= store.end_loc.0))
         {
-            // log!("making box green. {:?} - {:?}", this_loc, store);
             "bg-green"
         } else {
             ""

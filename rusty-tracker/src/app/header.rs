@@ -1,8 +1,11 @@
+use super::sequence::note_to_display;
 use crate::{app::PlaybackArgs, invoke};
+use futures_util::StreamExt;
 use leptos::{logging::*, *};
 use serde::Serialize;
 use serde_wasm_bindgen::to_value;
-use tracker_lib::PlaybackCmd;
+use tauri_sys::event;
+use tracker_lib::{MidiNote, PlaybackCmd};
 use wasm_bindgen_futures::spawn_local;
 
 #[derive(Serialize)]
@@ -58,6 +61,62 @@ pub fn Header() -> impl IntoView {
 
 #[component]
 pub fn SideCar(set_playhead: WriteSignal<usize>) -> impl IntoView {
+    view! {
+        <h1>"Setttings"</h1>
+        // playback controls
+        <PlaybackControls set_playhead=set_playhead/>
+        // song information (bpm, row_beat)
+        <SettingsMenu/>
+        // wave table selection & what note is playing on what track
+        <ActivityMonitor/>
+        // spectrograph
+        // waveform analyzer
+    }
+}
+
+#[component]
+fn PlaybackControls(set_playhead: WriteSignal<usize>) -> impl IntoView {
+    view! {
+        <div class="justify-center text-center gap-x-2 flex">
+            <button
+                class="bg-peach px-2"
+                on:click=move |_| {
+                    let args = PlaybackArgs {
+                        playback_cmd: PlaybackCmd::Play,
+                    };
+
+                    spawn_local(async move {
+                        log!("starting playback");
+                        invoke("playback", to_value(&args).unwrap()).await;
+                    });
+                }
+            >
+                "start playback"
+            </button>
+            // <div class="p-2"></div>
+            <button
+                class="bg-peach px-2"
+                on:click=move |_| {
+                    let args = PlaybackArgs {
+                        playback_cmd: PlaybackCmd::Stop,
+                    };
+
+                    spawn_local(async move {
+                        log!("stoping playback");
+                        invoke("playback", to_value(&args).unwrap()).await;
+                        set_playhead.set(0);
+                    });
+                }
+            >
+                "stop playback"
+            </button>
+        </div>
+
+    }
+}
+
+#[component]
+fn SettingsMenu() -> impl IntoView {
     let (tempo, set_tempo) = create_signal(110);
     let (beat, set_beat) = create_signal(4);
 
@@ -104,60 +163,91 @@ pub fn SideCar(set_playhead: WriteSignal<usize>) -> impl IntoView {
     backend_beat();
 
     view! {
-        <h1>"Setttings"</h1>
-        <div class="justify-center text-center gap-x-2 flex">
-            <button
-                class="bg-peach px-2"
-                on:click=move |_| {
-                    let args = PlaybackArgs {
-                        playback_cmd: PlaybackCmd::Play,
-                    };
-
-                    spawn_local(async move {
-                        log!("starting playback");
-                        invoke("playback", to_value(&args).unwrap()).await;
-                    });
-                }
-            >
-                "start playback"
-            </button>
-            // <div class="p-2"></div>
-            <button
-                class="bg-peach px-2"
-                on:click=move |_| {
-                    let args = PlaybackArgs {
-                        playback_cmd: PlaybackCmd::Stop,
-                    };
-
-                    spawn_local(async move {
-                        log!("stoping playback");
-                        invoke("playback", to_value(&args).unwrap()).await;
-                        set_playhead.set(0);
-                    });
-                }
-            >
-                "stop playback"
-            </button>
-        </div>
-        // song information (bpm, row_beat)
         <div class="grid grid-flow-col gap-x-2">
             <div class="justify-center text-center">
-                // <label for="tempo"> "tempo" </label>
                 <h1> "tempo" </h1>
                 <input type="number" name="tempo" min=20 max=420 value=110 on:change=tempo_change/>
             </div>
             // <div> </div>
             <div class="justify-center text-center">
-                // <label for="beat"> "beat" </label>
                 <h1> "beat" </h1>
                 <input type="number" name="beat" min=1 max=64 value="4" on:change=row_beat_change/>
             </div>
         </div>
-        // wave table selection & what note is playing on what track
+    }
+}
+
+async fn listen_on_note_change_event(
+    event_writer: WriteSignal<Option<MidiNote>>,
+    track_number: usize,
+) {
+    loop {
+        let mut events = event::listen::<(usize, Option<MidiNote>)>("note-change")
+            .await
+            .unwrap();
+
+        while let Some(event) = events.next().await {
+            let (track, midi_note) = event.payload;
+
+            if track == track_number {
+                log!("Received  event.");
+                event_writer.set(midi_note);
+            }
+        }
+    }
+}
+
+#[component]
+fn TrackMonitor(track_number: usize) -> impl IntoView {
+    // make signal
+    let (playing_note, set_playing_note) = create_signal(None);
+
+    // start event listener to update signal
+    spawn_local(listen_on_note_change_event(set_playing_note, track_number));
+
+    // let display = move || match playing_note.get() {
+    //     Some(note) => note_to_display(note),
+    //     None => String::new(),
+    // };
+
+    view! {
+        { move ||
+            match playing_note.get() {
+                Some(note) => view! {
+                    <div>
+                        <br/>
+                        {note_to_display(note)}
+                        <br/>
+                    </div>
+                },
+                None => view! {
+                    <div>
+                        <br/>
+                        <br/>
+                        <br/>
+                    </div>
+                },
+            }
+        }
+    }
+}
+
+#[component]
+fn ActivityMonitor() -> impl IntoView {
+    view! {
         <div class="grid grid-flow-col gap-x-2">
-            // <For />
+            <For
+                each=move || (0..4)
+                key=move |i| *i
+                children=move |i| view! {
+                    <div class="bg-green">
+                        <div>
+                            // TODO: wavetable setter
+                        </div>
+                        <TrackMonitor track_number=i/>
+                    </div>
+                }
+            />
         </div>
-        // spectrograph
-        // waveform analyzer
     }
 }

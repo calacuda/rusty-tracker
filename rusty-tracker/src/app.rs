@@ -15,7 +15,7 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
 mod header;
-mod sequence;
+pub mod sequence;
 
 #[wasm_bindgen]
 extern "C" {

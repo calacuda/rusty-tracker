@@ -27,6 +27,7 @@ const NANO_MIN: u64 = 60_000_000_000;
 
 struct IO {
     line_out: JoinHandle<()>,
+    note_out: JoinHandle<()>,
 }
 
 // #[derive(Serialize, Deserialize, Clone)]
@@ -55,15 +56,24 @@ pub struct Player {
     beat: u64,
     // window: Option<Window>,
     line_out: Sender<usize>,
+    notes_out: Sender<(usize, Option<MidiNote>)>,
 }
 
 impl Player {
     pub fn new(
         song: Arc<Mutex<TrackerState>>,
         synth: Arc<Mutex<TrackerSynth>>,
-    ) -> (Self, (Sender<PlayerCmd>, Receiver<usize>)) {
+    ) -> (
+        Self,
+        (
+            Sender<PlayerCmd>,
+            Receiver<usize>,
+            Receiver<(usize, Option<MidiNote>)>,
+        ),
+    ) {
         let (tx, rx) = unbounded();
         let (line_tx, line_rx) = unbounded();
+        let (note_tx, note_rx) = unbounded();
         let tempo = 110;
         let beat = 4;
 
@@ -81,8 +91,9 @@ impl Player {
                 tempo,
                 beat,
                 line_out: line_tx,
+                notes_out: note_tx,
             },
-            (tx, line_rx),
+            (tx, line_rx, note_rx),
         )
     }
 
@@ -229,6 +240,12 @@ impl Future for Player {
                         // if let Some(lines) = sequence {
                         let row_dat = sequence[line_i % sequence.len()];
 
+                        if let Some(MidiNoteCmd::PlayNote(note)) = row_dat.notes[0] {
+                            s.notes_out.send((i, Some(note)));
+                        } else if let Some(MidiNoteCmd::StopNote(_)) = row_dat.notes[0] {
+                            s.notes_out.send((i, None));
+                        }
+
                         (
                             i,
                             row_dat.notes.into_iter().filter_map(|note| note).collect(),
@@ -360,6 +377,19 @@ async fn line_out(window: Window, line_rx: Receiver<usize>) {
     }
 }
 
+async fn note_out(window: Window, note_rx: Receiver<(usize, Option<MidiNote>)>) {
+    loop {
+        // // might not be nessesary
+        // while note_rx.len() > 1 {
+        //     line_rx.recv().unwrap();
+        // }
+
+        while let Ok(note_dat) = note_rx.recv() {
+            window.emit_all("note-change", note_dat).unwrap();
+        }
+    }
+}
+
 #[tauri::command(rename_all = "snake_case")]
 fn playback(
     // player: State<'_, Arc<Mutex<Player>>>,
@@ -367,6 +397,7 @@ fn playback(
     player_ipc: State<'_, Arc<Mutex<Sender<PlayerCmd>>>>,
     io_threads: State<'_, Arc<Mutex<IO>>>,
     line_rx: State<'_, Receiver<usize>>,
+    note_rx: State<'_, Receiver<(usize, Option<MidiNote>)>>,
     playback_cmd: PlaybackCmd,
 ) {
     // warn!("playback is not yet enabled on the back end is not yet implemented");
@@ -376,12 +407,21 @@ fn playback(
                 error!("failed to play: {e}");
             } else {
                 let line_rx = line_rx.inner().clone();
-                io_threads.lock().unwrap().line_out = spawn(line_out(window, line_rx));
+                io_threads.lock().unwrap().line_out = spawn(line_out(window.clone(), line_rx));
+
+                let note_rx = note_rx.inner().clone();
+                io_threads.lock().unwrap().note_out = spawn(note_out(window.clone(), note_rx));
             };
         }
         PlaybackCmd::Stop => {
             if let Err(e) = player_ipc.lock().unwrap().send(PlayerCmd::StopPlayback) {
                 error!("failed to stop: {e}");
+            } else {
+                // set all join_handles back to nothing
+                let mut threads = io_threads.lock().unwrap();
+
+                (*threads).line_out = spawn(async move { () });
+                (*threads).note_out = spawn(async move { () });
             };
         }
         PlaybackCmd::SetCursor(loc) => {
@@ -436,11 +476,12 @@ fn main() -> Result<()> {
     let state = Arc::new(Mutex::new(TrackerState::default()));
 
     info!("initializing player");
-    let (player, (player_ipc, line_rx)) = Player::new(state.clone(), synth.clone());
+    let (player, (player_ipc, line_rx, note_rx)) = Player::new(state.clone(), synth.clone());
     let player_ipc = Arc::new(Mutex::new(player_ipc));
     let _midi_thread = spawn(player);
     let io = Arc::new(Mutex::new(IO {
         line_out: spawn(async move { () }),
+        note_out: spawn(async move { () }),
     }));
 
     tauri::Builder::default()
@@ -450,6 +491,7 @@ fn main() -> Result<()> {
         .manage(player_ipc)
         .manage(io)
         .manage(line_rx)
+        .manage(note_rx)
         .invoke_handler(tauri::generate_handler![
             // play_note,
             // stop_note,
