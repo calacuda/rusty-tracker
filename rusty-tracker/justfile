@@ -1,5 +1,5 @@
 dev:
-  cargo tauri dev
+  WEBKIT_DISABLE_DMABUF_RENDERER=1 cargo tauri dev
 
 release:
   cargo tauri dev --release

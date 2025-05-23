@@ -224,7 +224,7 @@ pub enum PlayerCmd {
     // PlayNote(MidiNote),
     // StopNote(MidiNote),
     // ExecCmd((Cmd, Option<CmdArg>)),
-    VolumeSet((Float, Option<ChannelIndex>)),
+    // VolumeSet((Float, Option<ChannelIndex>)),
     PausePlayback,
     ResumePlayback,
     StopPlayback,
@@ -233,7 +233,7 @@ pub enum PlayerCmd {
     SetCursor(usize),
     SetTempo(u64),
     SetBeat(u64),
-    SetWavetable((ChannelIndex, Wavetable)),
+    // SetWavetable((ChannelIndex, Wavetable)),
 }
 
 pub fn get_cmd_arg_val(arg: CmdArg) -> usize {

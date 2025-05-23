@@ -2,6 +2,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 use anyhow::{bail, Result};
 use crossbeam::channel::{unbounded, Receiver, Sender};
+use fxhash::FxHashMap;
+use midir::MidiOutput;
 use std::{
     future::Future,
     pin::Pin,
@@ -10,19 +12,23 @@ use std::{
     // thread,
     time::{Duration, Instant},
 };
-use synth_lib::{audio::TrackerSynth, init_synth, Note};
+// use synth_lib::{audio::TrackerSynth, init_synth, Note};
 use tauri::{
     async_runtime::{spawn, JoinHandle},
-    Manager, State, Window,
+    Emitter, Manager, State, Window,
 };
 // use tauri_sys::window::current_window;
 use tracing::*;
 use tracker_lib::{
     Channel, ChannelIndex, Cmd, CmdArg, MidiNote, MidiNoteCmd, MidiTarget, PlaybackCmd,
-    PlaybackState, PlayerCmd, TrackerState, Wavetable,
+    PlaybackState, PlayerCmd, TrackerState,
 };
 
+pub type HashMap<K, V> = FxHashMap<K, V>;
+
 pub const MAX_COL_LEN: usize = 0xFFFF;
+// pub const WEB_VIEW_WINDOW: &str = "Midi-Tracker";
+pub const WEB_VIEW_WINDOW: &str = "main";
 const NANO_MIN: u64 = 60_000_000_000;
 
 struct IO {
@@ -42,10 +48,12 @@ pub struct Player {
     ipc: Receiver<PlayerCmd>,
     /// the state of the song the user has written.
     song: Arc<Mutex<TrackerState>>,
-    /// the synth that is used when `self.target` is set to `MidiTarget::BuiltinSynth`.
-    synth: Arc<Mutex<TrackerSynth>>,
+    // /// the synth that is used when `self.target` is set to `MidiTarget::BuiltinSynth`.
+    // synth: Arc<Mutex<TrackerSynth>>,
     // /// time till next event in nano_seconds
     // ttne: Mutex<usize>,
+    /// virtual mdii output devices
+    midi_outs: HashMap<String, MidiOutput>,
     /// the instant that the last beat was processed
     last_event: Instant,
     /// the amount of time between beats
@@ -62,7 +70,7 @@ pub struct Player {
 impl Player {
     pub fn new(
         song: Arc<Mutex<TrackerState>>,
-        synth: Arc<Mutex<TrackerSynth>>,
+        // synth: Arc<Mutex<TrackerSynth>>,
     ) -> (
         Self,
         (
@@ -85,9 +93,10 @@ impl Player {
                 ipc: rx,
                 song,
                 // ttne: Mutex::new(0),
+                midi_outs: HashMap::default(),
                 last_event: Instant::now(),
                 beat_time: Duration::from_nanos(NANO_MIN / tempo / beat),
-                synth,
+                // synth,
                 tempo,
                 beat,
                 line_out: line_tx,
@@ -100,23 +109,24 @@ impl Player {
     fn send_note(&mut self, note: MidiNoteCmd, channel: usize) {
         // let note = Note::from(note);
         let (note, play) = match note {
-            MidiNoteCmd::PlayNote(note) => (Note::from(note), true),
-            MidiNoteCmd::StopNote(note) => (Note::from(note), false),
+            MidiNoteCmd::PlayNote(note) => (note, true),
+            MidiNoteCmd::StopNote(note) => (note, false),
             MidiNoteCmd::HoldNote => return,
         };
 
+        //  TODO: sends sends note on/off messages to the selected midi device and channel
         match self.target {
-            MidiTarget::BuiltinSynth => {
-                if play {
-                    if let Err(e) = self.synth.lock().unwrap().play(note, channel) {
-                        error!("the built in synth failed to play \"{note}\" on channel \"{channel}\". failed with error {e}.")
-                    }
-                } else {
-                    if let Err(e) = self.synth.lock().unwrap().stop(note, channel) {
-                        error!("the built in synth failed to play \"{note}\" on channel \"{channel}\". failed with error {e}.")
-                    }
-                }
-            }
+            // MidiTarget::BuiltinSynth => {
+            //     if play {
+            //         if let Err(e) = self.synth.lock().unwrap().play(note, channel) {
+            //             error!("the built in synth failed to play \"{note}\" on channel \"{channel}\". failed with error {e}.")
+            //         }
+            //     } else {
+            //         if let Err(e) = self.synth.lock().unwrap().stop(note, channel) {
+            //             error!("the built in synth failed to play \"{note}\" on channel \"{channel}\". failed with error {e}.")
+            //         }
+            //     }
+            // }
             _ => error!("not implemented yet"),
         }
     }
@@ -164,11 +174,12 @@ impl Future for Player {
         // read from self.ipc and do the thing it says
         if let Ok(cmd_msg) = s.ipc.try_recv() {
             match cmd_msg {
-                PlayerCmd::VolumeSet((vol, channel)) => {
-                    if let Err(e) = s.synth.lock().unwrap().set_volume(vol, channel) {
-                        error!("{e}");
-                    }
-                }
+                // PlayerCmd::VolumeSet((vol, channel)) => {
+                //     // if let Err(e) = s.synth.lock().unwrap().set_volume(vol, channel) {
+                //     //     error!("{e}");
+                //     // }
+                //     error!("not implemented yet");
+                // }
                 PlayerCmd::SetPlayingChannels(channels) => s.channels = channels,
                 PlayerCmd::SetTarget(target) => s.target = target,
                 PlayerCmd::PausePlayback => match s.state {
@@ -197,17 +208,17 @@ impl Future for Player {
                 },
                 PlayerCmd::SetTempo(tempo) => s.set_tempo(tempo),
                 PlayerCmd::SetBeat(beat) => s.set_beat(beat),
-                PlayerCmd::SetWavetable((channel, Wavetable::BuiltIn(waveform_type))) => {
-                    if let Err(e) = s.synth.lock().unwrap().set_waveform(channel, waveform_type) {
-                        error!(
-                            "atempt to set channel {channel}'s synth to waveform {waveform_type:?} resulted in error, {e}"
-                        );
-                    }
-                }
-                PlayerCmd::SetWavetable((_channel, Wavetable::FromFile(_table_file))) => {
-                    // TODO: add loading of wave table from file.
-                    todo!("load wave table from file")
-                }
+                // PlayerCmd::SetWavetable((channel, Wavetable::BuiltIn(waveform_type))) => {
+                // if let Err(e) = s.synth.lock().unwrap().set_waveform(channel, waveform_type) {
+                //     error!(
+                //         "atempt to set channel {channel}'s synth to waveform {waveform_type:?} resulted in error, {e}"
+                //     );
+                // }
+                // }
+                // PlayerCmd::SetWavetable((_channel, Wavetable::FromFile(_table_file))) => {
+                //     // TODO: add loading of wave table from file.
+                //     todo!("load wave table from file")
+                // }
             }
         }
 
@@ -336,7 +347,7 @@ fn add_note(
         error!("failed to add note: {note:?}, to channel {channel}, at row {stop}. this process failed with error: {e}");
     }
 
-    // else {
+    // else {WEBKIT_DISABLE_DMABUF_RENDERER=0
     //     info!("added note {note} successfully");
     // }
 }
@@ -372,7 +383,9 @@ async fn line_out(window: Window, line_rx: Receiver<usize>) {
         }
 
         while let Ok(ln) = line_rx.recv() {
-            window.emit_all("playhead", ln).unwrap();
+            if let Some(window) = window.get_webview_window(WEB_VIEW_WINDOW) {
+                window.emit("playhead", ln).unwrap();
+            }
         }
     }
 }
@@ -385,7 +398,9 @@ async fn note_out(window: Window, note_rx: Receiver<(usize, Option<MidiNote>)>) 
         // }
 
         while let Ok(note_dat) = note_rx.recv() {
-            window.emit_all("note-change", note_dat).unwrap();
+            if let Some(window) = window.get_webview_window(WEB_VIEW_WINDOW) {
+                window.emit("note-change", note_dat).unwrap();
+            }
         }
     }
 }
@@ -456,27 +471,29 @@ fn get_state(
 ) {
     let tracker_state = { state.lock().unwrap().copy_from_row(start_row, n_rows) };
 
-    window.emit_all("state-change", tracker_state).unwrap();
+    if let Some(window) = window.get_webview_window(WEB_VIEW_WINDOW) {
+        window.emit("state-change", tracker_state).unwrap();
+    }
 }
 
 // #[tokio::main(flavor = "multi_thread", worker_threads = 2)]
 // async fn main() -> Result<()> {
 fn main() -> Result<()> {
-    let (synth, stream_handle, audio) = match init_synth() {
-        Ok((synth, stream_handle, audio)) => (synth, stream_handle, audio),
-        Err(e) => {
-            error!("{e}");
-            bail!("{e}");
-        }
-    };
-
-    info!("starting audio stream");
-    stream_handle.play_raw(audio).unwrap();
+    // let (synth, stream_handle, audio) = match init_synth() {
+    //     Ok((synth, stream_handle, audio)) => (synth, stream_handle, audio),
+    //     Err(e) => {
+    //         error!("{e}");
+    //         bail!("{e}");
+    //     }
+    // };
+    //
+    // info!("starting audio stream");
+    // stream_handle.play_raw(audio).unwrap();
     info!("initializing tracker state");
     let state = Arc::new(Mutex::new(TrackerState::default()));
 
     info!("initializing player");
-    let (player, (player_ipc, line_rx, note_rx)) = Player::new(state.clone(), synth.clone());
+    let (player, (player_ipc, line_rx, note_rx)) = Player::new(state.clone());
     let player_ipc = Arc::new(Mutex::new(player_ipc));
     let _midi_thread = spawn(player);
     let io = Arc::new(Mutex::new(IO {
@@ -485,7 +502,7 @@ fn main() -> Result<()> {
     }));
 
     tauri::Builder::default()
-        .manage(synth)
+        // .manage(synth)
         // .manage(Arc::new(Mutex::new(player)))
         .manage(state)
         .manage(player_ipc)

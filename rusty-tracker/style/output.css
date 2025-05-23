@@ -1,0 +1,74 @@
+/*! tailwindcss v4.1.7 | MIT License | https://tailwindcss.com */
+.col-span-1 {
+  grid-column: span 1 / span 1;
+}
+.col-span-2 {
+  grid-column: span 2 / span 2;
+}
+.col-span-3 {
+  grid-column: span 3 / span 3;
+}
+.block {
+  display: block;
+}
+.flex {
+  display: flex;
+}
+.grid {
+  display: grid;
+}
+.table {
+  display: table;
+}
+.h-fit {
+  height: fit-content;
+}
+.h-full {
+  height: 100%;
+}
+.max-h-fit {
+  max-height: fit-content;
+}
+.w-full {
+  width: 100%;
+}
+.grid-flow-col {
+  grid-auto-flow: column;
+}
+.grid-flow-row {
+  grid-auto-flow: row;
+}
+.grid-cols-12 {
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+}
+.justify-center {
+  justify-content: center;
+}
+.text-center {
+  text-align: center;
+}
+@font-face {
+  font-display: block;
+  font-family: "AnonymousPro";
+  src: url("/public/assets/fonts/AnonymousPro.ttf");
+}
+@font-face {
+  font-display: block;
+  font-family: "AnonymousPro";
+  font-style: italic;
+  src: url("/public/assets/fonts/AnonymousPro-I.ttf");
+}
+:root {
+  font-family: AnonymousPro;
+  color: #0f0f0f;
+  background-color: #f6f6f6;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-text-size-adjust: 100%;
+}
+body {
+  width: 100vw;
+  height: 100vh;
+}

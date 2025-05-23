@@ -19,8 +19,14 @@ pub mod sequence;
 
 #[wasm_bindgen]
 extern "C" {
-    #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "tauri"])]
-    pub async fn invoke(cmd: &str, args: JsValue) -> JsValue;
+    #[wasm_bindgen(catch, js_namespace = ["window", "__TAURI__", "core"])]
+    pub async fn invoke(cmd: &str, args: JsValue) -> Result<JsValue, JsValue>;
+
+    #[wasm_bindgen(catch, js_namespace = ["window", "__TAURI__", "event"])]
+    pub async fn listen(
+        event: &str,
+        closure: &Closure<dyn Fn(JsValue)>,
+    ) -> Result<JsValue, JsValue>;
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
@@ -204,7 +210,12 @@ pub fn App() -> impl IntoView {
         spawn_local(async move {
             // warn!("inside async block");
             log!("requesting state");
-            invoke("get_state", to_value(&args).unwrap()).await;
+            if let Err(e) = invoke("get_state", to_value(&args).unwrap()).await {
+                error!("getting state resulted in {e:?}");
+            }
+            // else {
+            //     log!("got state");
+            // }
         });
     };
 
@@ -239,14 +250,14 @@ pub fn App() -> impl IntoView {
         }
     });
 
-    let state_size = move || tracker_state.get().sequences[0].len();
+    // let state_size = move || tracker_state.get().sequences[0].len();
 
     let line_numbers = move || {
         let sr = start_row.get();
 
         view! {
             <For
-                each=move || (sr..sr + state_size()).into_iter()
+                each=move || (sr..sr + tracker_state.get().sequences[0].len()).into_iter()
                 key=move |ln| (*ln, *ln == playhead.get())
                 children=move |ln| {
                     let line_num = format!("{:04X}", ln);
@@ -297,8 +308,8 @@ pub fn App() -> impl IntoView {
     let get_start = create_memo(move |_| tracker_state.get().display_start);
 
     let get_sequences = move || {
-        let start = get_start.get();
-        let _n_lines = state_size();
+        // let start = get_start.get();
+        // let _n_lines = state_size();
 
         // (start..start + 4)
         //     .into_iter()
@@ -311,7 +322,11 @@ pub fn App() -> impl IntoView {
         //     .collect_view()
         view! {
             <For
-                each=move || (start..start + 4)
+                each=move || {
+                    let start = get_start.get();
+
+                    start..start + 4
+                }
                 key=move |i| *i
                 children=move |i| {
                     view! {
