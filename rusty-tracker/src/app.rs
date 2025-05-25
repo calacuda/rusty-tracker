@@ -301,6 +301,7 @@ pub fn App() -> impl IntoView {
             <div class="justify-center text-center col-span-1 grid-flow-row p-2">
                 <div class=""> <br/> </div>
                 <div class=""> <br/> </div>
+                <div class=""> <br/> </div>
                 { line_numbers }
             </div>
         }
