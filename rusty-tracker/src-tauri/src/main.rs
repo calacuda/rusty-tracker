@@ -295,7 +295,7 @@ impl Future for Player {
                 s.state = PlaybackState::Playing(
                     (line_i + 1) % s.song.lock().unwrap().sequences[0].data.len(),
                 );
-                info!("playback state: {:0X}", line_i);
+                debug!("playback state: {:0X}", line_i);
 
                 let notes: Vec<(u8, Vec<MidiNoteCmd>, String)> = s
                     .song

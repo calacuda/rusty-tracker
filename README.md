@@ -10,3 +10,4 @@ this project is in the very early statges of development and is not yet suitable
 
 - [ ] add midi keyboard input.
 - [ ] add changin of midi device & channel.
+- [ ] saving and loading of midi/tracker files.
