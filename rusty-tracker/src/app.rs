@@ -191,7 +191,7 @@ pub fn App() -> impl IntoView {
     let get_state = move || {
         // let _width = width.get();
         // let size = font_size.get().into();
-        let n_rows = num_lines(font_size.get().into());
+        let n_rows = num_lines(font_size.get_untracked().into());
 
         log!(
             "n_rows: {n_rows:0X} | height: {}",
@@ -204,7 +204,7 @@ pub fn App() -> impl IntoView {
         );
 
         let args = GetStateArgs {
-            start_row: start_row.get(),
+            start_row: start_row.get_untracked(),
             n_rows,
         };
 
