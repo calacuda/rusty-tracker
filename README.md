@@ -8,5 +8,5 @@ this project is in the very early statges of development and is not yet suitable
 
 ## TODO 
 
-- [ ] change key binds to enter edit mod then press enter to start placing a note
-- [ ] update synth to allow changing of the wavetables
+- [ ] add midi keyboard input.
+- [ ] add changin of midi device & channel.

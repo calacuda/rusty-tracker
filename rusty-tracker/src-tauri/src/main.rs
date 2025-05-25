@@ -4,7 +4,7 @@ use anyhow::{bail, Result};
 use crossbeam::channel::{unbounded, Receiver, Sender};
 use fxhash::FxHashMap;
 use midi_control::{Channel, KeyEvent, MidiMessage};
-use midir::{MidiOutput, MidiOutputConnection};
+use midir::{os::unix::VirtualOutput, MidiOutput, MidiOutputConnection};
 use std::{
     future::Future,
     pin::Pin,
@@ -22,7 +22,7 @@ use tauri::{
 use tracing::*;
 use tracker_lib::{
     ChannelIndex, Cmd, CmdArg, MidiNote, MidiNoteCmd, PlaybackCmd, PlaybackState, PlayerCmd,
-    TrackerState,
+    TrackerState, DEFAULT_MIDI_DEV_NAME,
 };
 
 pub type HashMap<K, V> = FxHashMap<K, V>;
@@ -85,6 +85,18 @@ impl Player {
         let (note_tx, note_rx) = unbounded();
         let tempo = 110;
         let beat = 4;
+        let mut midi_outs = HashMap::default();
+
+        match new_midi_dev(DEFAULT_MIDI_DEV_NAME) {
+            Ok(dev) => {
+                info!("New midi device");
+                _ = midi_outs.insert(DEFAULT_MIDI_DEV_NAME.into(), dev);
+            }
+            Err(e) => 
+                error!("making new virtual midi device resulted in error {e}. not enabling default virtual midi output dev."),
+        }
+
+        println!("n midi outputs {}", midi_outs.len());
 
         (
             Player {
@@ -94,7 +106,7 @@ impl Player {
                 ipc: rx,
                 song,
                 // ttne: Mutex::new(0),
-                midi_outs: HashMap::default(),
+                midi_outs,
                 last_event: Instant::now(),
                 beat_time: Duration::from_nanos(NANO_MIN / tempo / beat),
                 // synth,
@@ -158,7 +170,9 @@ impl Player {
                 )
             };
 
-            out.send(&Vec::from(cmd));
+            if let Err(e) = out.send(&Vec::from(cmd)) {
+                error!("tried to sending midi output message, resulted in error {e}.");
+            }
         }
         // match self.target {
         //     // MidiTarget::BuiltinSynth => {
@@ -350,6 +364,18 @@ impl Future for Player {
     }
 }
 
+fn new_midi_dev(name: &str) -> anyhow::Result<MidiOutputConnection> {
+    let midi_out = MidiOutput::new("midir forwarding output")?;
+
+    // let out_port = select_port(&midi_out, "output")?;
+
+    // let out_port_name = midi_out.port_name(&out_port)?;
+    match midi_out.create_virtual(name) {
+        Ok(dev) => Ok(dev),
+        Err(e) => bail!("{e}"),
+    }
+}
+
 #[tauri::command(rename_all = "snake_case")]
 fn send_midi(_synth: State<'_, Arc<Mutex<TrackerState>>>, _midi_cmd: Vec<u8>) {
     // synth.stop(note);
@@ -525,6 +551,22 @@ fn get_state(
     }
 }
 
+pub fn start_logging() -> Result<()> {
+    // construct a subscriber that prints formatted traces to stdout
+    let subscriber = tracing_subscriber::fmt()
+        .compact()
+        .with_thread_ids(true)
+        .with_target(true)
+        .with_level(true)
+        .with_max_level(Level::TRACE)
+        .without_time()
+        .finish();
+    // use that subscriber to process traces emitted after this point
+    tracing::subscriber::set_global_default(subscriber)?;
+
+    Ok(())
+}
+
 // #[tokio::main(flavor = "multi_thread", worker_threads = 2)]
 // async fn main() -> Result<()> {
 fn main() -> Result<()> {
@@ -537,6 +579,11 @@ fn main() -> Result<()> {
     // };
     //
     // info!("starting audio stream");
+
+    if let Err(e) = start_logging() {
+        eprintln!("{e} no logging");
+    }
+    
     // stream_handle.play_raw(audio).unwrap();
     info!("initializing tracker state");
     let state = Arc::new(Mutex::new(TrackerState::default()));

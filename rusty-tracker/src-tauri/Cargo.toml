@@ -27,6 +27,7 @@ tauri-sys = { git = "https://github.com/JonasKruckenberg/tauri-sys", branch = "v
 midir = "0.10.1"
 fxhash = "0.2.1"
 midi-control = "0.2.2"
+tracing-subscriber = { version = "0.3.19", features = ["tracing"] }
 
 [features]
 # This feature is used for production builds or when a dev server is not specified, DO NOT REMOVE!!

@@ -17,27 +17,47 @@ pub fn Sequence(
         let n_notes = tmp_state.notes.len();
         let n_cmds = tmp_state.cmds.len();
 
-        let get_sequence = create_memo(move |_| state.get().sequences[i].data.to_owned());
+        let get_sequence = create_memo({
+            let state = state.clone();
 
-        let row_memo = create_memo(move |_| {
-            let memos: Vec<(usize, Memo<RowData>)> = get_sequence
-                .get()
-                .into_iter()
-                .enumerate()
-                .map(|(row_i, _)| (row_i, create_memo(move |_| get_sequence.get()[row_i])))
-                .collect();
+            move |_| state.get().sequences[i].data.to_owned()
+        });
 
-            memos
+        let row_memo = create_memo({
+            let get_sequence = get_sequence.clone();
+
+            move |_| {
+                let memos: Vec<(usize, Memo<RowData>)> = get_sequence
+                    .get()
+                    .into_iter()
+                    .enumerate()
+                    .map(|(row_i, _)| (row_i, create_memo(move |_| get_sequence.get()[row_i])))
+                    .collect();
+
+                memos
+            }
+        });
+
+        let midi_dev = create_memo({
+            let state = state.clone();
+
+            move |_| state.get().sequences[i].dev.clone()
+        });
+
+        let midi_chan = create_memo({
+            let state = state.clone();
+
+            move |_| state.get().sequences[i].channel
         });
 
         view! {
             <div class="col-span-2 grid-flow-row p-2">
-                <SequenceHeader i=i n_notes=n_notes n_cmds=n_cmds/>
+                <SequenceHeader i=i n_notes=n_notes n_cmds=n_cmds midi_dev=midi_dev midi_chan=midi_chan/>
                 <For
                     each=move || row_memo.get()
                     key=|mem| (mem.0, mem.1.get())
                     children=move |(row_i, memo)| {
-                        log!("generating row {row_i:0X} from sequence {i}");
+                        log!("generating row 0X{row_i:0X} ({row_i} in base 10) from sequence {i}");
 
                         view! {
                             <SequenceRow
@@ -149,7 +169,13 @@ pub fn SequenceRow(
 }
 
 #[component]
-pub fn SequenceHeader(i: usize, n_notes: usize, n_cmds: usize) -> impl IntoView {
+pub fn SequenceHeader(
+    i: usize,
+    n_notes: usize,
+    n_cmds: usize,
+    midi_dev: Memo<String>,
+    midi_chan: Memo<u8>,
+) -> impl IntoView {
     let note_headers = (0..n_notes)
         .map(|n| {
             view! {
@@ -171,6 +197,9 @@ pub fn SequenceHeader(i: usize, n_notes: usize, n_cmds: usize) -> impl IntoView 
 
     view! {
         <div class="">
+            <div class="">
+                { move || format!("{}:{}", midi_dev.get(), midi_chan.get()) }
+            </div>
             <div class="">
                 { format!("Track => {i}") }
             </div>

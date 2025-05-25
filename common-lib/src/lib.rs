@@ -14,6 +14,7 @@ pub type Cmd = char;
 pub type ChannelIndex = u8;
 
 pub const LINE_LEN: usize = 0xFFFF;
+pub const DEFAULT_MIDI_DEV_NAME: &str = "Midi-Tracker";
 
 #[cfg_attr(feature = "bevy", derive(Resource))]
 #[derive(Serialize, Deserialize, Clone, Debug, Copy, Eq, Hash, PartialEq)]
@@ -55,7 +56,7 @@ impl Default for TrackerState {
 
         let mut def = Row {
             data,
-            dev: "Midi-Tracker".into(),
+            dev: DEFAULT_MIDI_DEV_NAME.into(),
             channel: 0,
         };
 
@@ -189,7 +190,7 @@ impl TrackerState {
 
         let mut def = Row {
             data,
-            dev: "Midi-Tracker".into(),
+            dev: DEFAULT_MIDI_DEV_NAME.into(),
             channel: 0,
         };
 
@@ -218,19 +219,32 @@ impl TrackerState {
         }
     }
 
-    pub fn copy_from_row(&self, row: usize, n_rows: usize) -> Vec<Vec<RowData>> {
-        // let s = self.clone();
+    // pub fn copy_from_row(&self, row: usize, n_rows: usize) -> Vec<Vec<RowData>> {
+    //     // let s = self.clone();
+    //
+    //     // Self {
+    //     //     display_start: self.display_start,
+    //     // sequences:
+    //     vec![
+    //         self.sequences[0].data[row..row + n_rows].to_vec(),
+    //         self.sequences[1].data[row..row + n_rows].to_vec(),
+    //         self.sequences[2].data[row..row + n_rows].to_vec(),
+    //         self.sequences[3].data[row..row + n_rows].to_vec(),
+    //     ]
+    //     // }
+    // }
+    pub fn copy_from_row(&self, row: usize, n_rows: usize) -> Self {
+        let mut s = self.clone();
+
+        s.sequences
+            .iter_mut()
+            .for_each(|seq| seq.data = seq.data[row..row + n_rows].to_vec());
 
         // Self {
         //     display_start: self.display_start,
-        // sequences:
-        vec![
-            self.sequences[0].data[row..row + n_rows].to_vec(),
-            self.sequences[1].data[row..row + n_rows].to_vec(),
-            self.sequences[2].data[row..row + n_rows].to_vec(),
-            self.sequences[3].data[row..row + n_rows].to_vec(),
-        ]
+        //     sequences,
         // }
+        s
     }
 }
 

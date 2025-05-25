@@ -41,6 +41,9 @@
 .grid-cols-12 {
   grid-template-columns: repeat(12, minmax(0, 1fr));
 }
+.flex-row {
+  flex-direction: row;
+}
 .justify-center {
   justify-content: center;
 }

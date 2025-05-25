@@ -79,6 +79,9 @@ pub fn SideCar(set_playhead: WriteSignal<usize>) -> impl IntoView {
 fn PlaybackControls(set_playhead: WriteSignal<usize>) -> impl IntoView {
     view! {
         <div class="justify-center text-center gap-x-2 flex">
+            <p>
+                "playback: "
+            </p>
             <button
                 class="bg-peach px-2"
                 on:click=move |_| {
@@ -92,7 +95,7 @@ fn PlaybackControls(set_playhead: WriteSignal<usize>) -> impl IntoView {
                     });
                 }
             >
-                "start playback"
+                "start"
             </button>
             // <div class="p-2"></div>
             <button
@@ -103,13 +106,13 @@ fn PlaybackControls(set_playhead: WriteSignal<usize>) -> impl IntoView {
                     };
 
                     spawn_local(async move {
-                        log!("stoping playback");
+                        log!("stoping");
                         invoke("playback", to_value(&args).unwrap()).await;
                         set_playhead.set(0);
                     });
                 }
             >
-                "stop playback"
+                "stop"
             </button>
         </div>
 
@@ -166,13 +169,16 @@ fn SettingsMenu() -> impl IntoView {
     view! {
         <div class="grid grid-flow-col gap-x-2">
             <div class="justify-center text-center">
-                <h1> "tempo" </h1>
+                <h1> "Tempo:" </h1>
                 <input type="number" name="tempo" min=20 max=420 value=110 on:change=tempo_change/>
             </div>
             // <div> </div>
             <div class="justify-center text-center">
-                <h1> "beat" </h1>
-                <input type="number" name="beat" min=1 max=64 value="4" on:change=row_beat_change/>
+                <h1> "Beat:" </h1>
+                <div class="flex flex-row justify-center text-center">
+                    <p> "1/" </p>
+                    <input type="number" name="beat" min=1 max=64 value=4 on:change=row_beat_change/>
+                </div>
             </div>
         </div>
     }
