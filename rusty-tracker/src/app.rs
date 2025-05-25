@@ -99,6 +99,7 @@ pub enum Mode {
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 struct AddNoteArgs {
     note: MidiNote,
+    vel: u8,
     channel: ChannelIndex,
     start: usize,
     stop: usize,
@@ -257,7 +258,7 @@ pub fn App() -> impl IntoView {
 
         view! {
             <For
-                each=move || (sr..sr + tracker_state.get().sequences[0].len()).into_iter()
+                each=move || (sr..sr + tracker_state.get().sequences[0].data.len()).into_iter()
                 key=move |ln| (*ln, *ln == playhead.get())
                 children=move |ln| {
                     let line_num = format!("{:04X}", ln);
@@ -363,6 +364,7 @@ pub fn App() -> impl IntoView {
 
             let args_play = AddNoteArgs {
                 note: midi_code,
+                vel: 64,
                 channel: channel as ChannelIndex,
                 note_number: note_num,
                 start: start_row,
@@ -410,7 +412,8 @@ pub fn App() -> impl IntoView {
         let channel = loc.1 / 6;
         let note_num = loc.1 % 6;
 
-        set_tracker_state.update(|state| state.sequences[channel][loc.0].notes[note_num] = note);
+        set_tracker_state
+            .update(|state| state.sequences[channel].data[loc.0].notes[note_num] = note);
     };
 
     let set_note = move |mut note_update_func: Box<dyn FnMut(MidiNote) -> MidiNote>| {

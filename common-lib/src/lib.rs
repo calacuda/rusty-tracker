@@ -1,7 +1,6 @@
-use std::path::PathBuf;
-
 use anyhow::{bail, ensure, Result};
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use synth_8080_lib::OscType;
 pub use synth_8080_lib::{notes::Note, Float};
 
@@ -9,6 +8,7 @@ pub use synth_8080_lib::{notes::Note, Float};
 use bevy::prelude::*;
 
 pub type MidiNote = u8;
+pub type MidiChannel = u8;
 pub type CmdArg = u32;
 pub type Cmd = char;
 pub type ChannelIndex = u8;
@@ -18,7 +18,7 @@ pub const LINE_LEN: usize = 0xFFFF;
 #[cfg_attr(feature = "bevy", derive(Resource))]
 #[derive(Serialize, Deserialize, Clone, Debug, Copy, Eq, Hash, PartialEq)]
 pub enum MidiNoteCmd {
-    PlayNote(MidiNote),
+    PlayNote((MidiNote, u8)),
     StopNote(MidiNote),
     HoldNote,
 }
@@ -32,25 +32,55 @@ pub struct RowData {
 
 #[cfg_attr(feature = "bevy", derive(Resource))]
 #[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Row {
+    pub data: Vec<RowData>,
+    pub dev: String,
+    pub channel: u8,
+}
+
+#[cfg_attr(feature = "bevy", derive(Resource))]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TrackerState {
-    pub sequences: Vec<Vec<RowData>>,
+    pub sequences: Vec<Row>,
     pub display_start: usize,
 }
 
 impl Default for TrackerState {
     fn default() -> Self {
-        let mut def: Vec<RowData> = Vec::with_capacity(LINE_LEN);
+        let mut data: Vec<RowData> = Vec::with_capacity(LINE_LEN);
 
         (0..LINE_LEN)
             .into_iter()
-            .for_each(|_| def.push(RowData::default()));
+            .for_each(|_| data.push(RowData::default()));
+
+        let mut def = Row {
+            data,
+            dev: "Midi-Tracker".into(),
+            channel: 0,
+        };
 
         Self {
             sequences: [
-                def.clone(),
-                def.clone(),
-                def.clone(),
-                def.clone(),
+                {
+                    // def.channel += 1;
+                    def.clone()
+                },
+                {
+                    def.channel += 1;
+                    def.clone()
+                },
+                {
+                    def.channel += 1;
+                    def.clone()
+                },
+                {
+                    def.channel += 1;
+                    def.clone()
+                },
+                // def.clone(),
+                // def.clone(),
+                // def.clone(),
+                // def.clone(),
                 // def.clone(),
                 // def.clone(),
                 // def.clone(),
@@ -94,15 +124,15 @@ impl TrackerState {
 
         let channel = self.channel_len_check(channel)?;
 
-        if self.sequences[channel].len() <= row {
+        if self.sequences[channel].data.len() <= row {
             for sequence in self.sequences.iter_mut() {
-                for _ in 0..row - sequence.len() {
-                    sequence.push(RowData::default());
+                for _ in 0..row - sequence.data.len() {
+                    sequence.data.push(RowData::default());
                 }
             }
         }
 
-        self.sequences[channel][row].notes[note_num] = note;
+        self.sequences[channel].data[row].notes[note_num] = note;
 
         Ok(())
     }
@@ -112,10 +142,10 @@ impl TrackerState {
 
         let channel = self.channel_len_check(channel)?;
 
-        if self.sequences[channel].len() <= row {
+        if self.sequences[channel].data.len() <= row {
             for sequence in self.sequences.iter_mut() {
-                for _ in 0..row - sequence.len() {
-                    sequence.push(RowData::default());
+                for _ in 0..row - sequence.data.len() {
+                    sequence.data.push(RowData::default());
                 }
             }
         }
@@ -123,22 +153,23 @@ impl TrackerState {
         // self.sequences[channel][i].notes[note_num]
         let mut i = row;
 
-        while Some(MidiNoteCmd::HoldNote) == self.sequences[channel][i].notes[note_num] || i == row
+        while Some(MidiNoteCmd::HoldNote) == self.sequences[channel].data[i].notes[note_num]
+            || i == row
         {
-            self.sequences[channel][i].notes[note_num] = None;
+            self.sequences[channel].data[i].notes[note_num] = None;
 
             i += 1;
         }
 
-        self.sequences[channel][i].notes[note_num] = None;
+        self.sequences[channel].data[i].notes[note_num] = None;
 
         if row > 0 {
             let mut i = row - 1;
 
-            while Some(MidiNoteCmd::HoldNote) == self.sequences[channel][i].notes[note_num]
+            while Some(MidiNoteCmd::HoldNote) == self.sequences[channel].data[i].notes[note_num]
                 || i == row - 1
             {
-                self.sequences[channel][i].notes[note_num] = None;
+                self.sequences[channel].data[i].notes[note_num] = None;
 
                 if i == 0 {
                     break;
@@ -147,22 +178,39 @@ impl TrackerState {
                 i -= 1;
             }
 
-            self.sequences[channel][i].notes[note_num] = None;
+            self.sequences[channel].data[i].notes[note_num] = None;
         }
 
         Ok(())
     }
 
     pub fn empty() -> Self {
-        let def: Vec<RowData> = vec![RowData::default()];
+        let data: Vec<RowData> = vec![RowData::default()];
+
+        let mut def = Row {
+            data,
+            dev: "Midi-Tracker".into(),
+            channel: 0,
+        };
 
         Self {
             sequences: [
-                def.clone(),
-                def.clone(),
-                def.clone(),
-                def.clone(),
-                // def.clone(),
+                {
+                    // def.channel += 1;
+                    def.clone()
+                },
+                {
+                    def.channel += 1;
+                    def.clone()
+                },
+                {
+                    def.channel += 1;
+                    def.clone()
+                },
+                {
+                    def.channel += 1;
+                    def.clone()
+                },
             ]
             .into_iter()
             .collect(),
@@ -170,16 +218,19 @@ impl TrackerState {
         }
     }
 
-    pub fn copy_from_row(&self, row: usize, n_rows: usize) -> Self {
-        Self {
-            display_start: self.display_start,
-            sequences: vec![
-                self.sequences[0][row..row + n_rows].to_vec(),
-                self.sequences[1][row..row + n_rows].to_vec(),
-                self.sequences[2][row..row + n_rows].to_vec(),
-                self.sequences[3][row..row + n_rows].to_vec(),
-            ],
-        }
+    pub fn copy_from_row(&self, row: usize, n_rows: usize) -> Vec<Vec<RowData>> {
+        // let s = self.clone();
+
+        // Self {
+        //     display_start: self.display_start,
+        // sequences:
+        vec![
+            self.sequences[0].data[row..row + n_rows].to_vec(),
+            self.sequences[1].data[row..row + n_rows].to_vec(),
+            self.sequences[2].data[row..row + n_rows].to_vec(),
+            self.sequences[3].data[row..row + n_rows].to_vec(),
+        ]
+        // }
     }
 }
 
@@ -201,11 +252,11 @@ pub enum PlaybackState {
     NotPlaying,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub enum MidiTarget {
-    BuiltinSynth,
-    MidiOut,
-}
+// #[derive(Serialize, Deserialize, Clone, Debug)]
+// pub enum MidiTarget {
+//     BuiltinSynth,
+//     MidiOut,
+// }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum Channel {
@@ -228,8 +279,8 @@ pub enum PlayerCmd {
     PausePlayback,
     ResumePlayback,
     StopPlayback,
-    SetPlayingChannels(Channel),
-    SetTarget(MidiTarget),
+    // SetPlayingChannels(Channel),
+    // SetTarget(MidiTarget),
     SetCursor(usize),
     SetTempo(u64),
     SetBeat(u64),

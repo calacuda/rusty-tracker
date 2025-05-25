@@ -12,12 +12,12 @@ pub fn Sequence(
     get_mode: ReadSignal<Mode>,
     start_row: ReadSignal<usize>,
 ) -> impl IntoView {
-    if !state.get_untracked().sequences[i].is_empty() {
-        let tmp_state = state.get_untracked().sequences[i][0];
+    if !state.get_untracked().sequences[i].data.is_empty() {
+        let tmp_state = state.get_untracked().sequences[i].data[0];
         let n_notes = tmp_state.notes.len();
         let n_cmds = tmp_state.cmds.len();
 
-        let get_sequence = create_memo(move |_| state.get().sequences[i].to_owned());
+        let get_sequence = create_memo(move |_| state.get().sequences[i].data.to_owned());
 
         let row_memo = create_memo(move |_| {
             let memos: Vec<(usize, Memo<RowData>)> = get_sequence
@@ -77,7 +77,7 @@ pub fn note_to_display(midi_note: MidiNote) -> String {
 
 fn note_to_name(midi_note: MidiNoteCmd) -> String {
     let midi_note = match midi_note {
-        MidiNoteCmd::PlayNote(note) => note,
+        MidiNoteCmd::PlayNote((note, _)) => note,
         MidiNoteCmd::StopNote(note) => note,
         MidiNoteCmd::HoldNote => return "|||".into(),
     };
@@ -201,9 +201,9 @@ fn NoteDisplay(
         let this_loc = (row_i, (6 * sequence_i) + note_num);
 
         if this_loc == get_loc.get() && get_mode.get() == Mode::Edit {
-            note_to_name(MidiNoteCmd::PlayNote(
-                get_storage.get().unwrap_or(NoteSetStorage::default()).note,
-            ))
+            let cell = get_storage.get().unwrap_or(NoteSetStorage::default());
+
+            note_to_name(MidiNoteCmd::PlayNote((cell.note, 0)))
         } else {
             match note {
                 Some(name) => note_to_name(name),

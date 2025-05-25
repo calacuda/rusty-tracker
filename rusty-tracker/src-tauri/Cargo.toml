@@ -26,6 +26,7 @@ crossbeam = { version = "0.8.4", features = ["crossbeam-channel", "nightly"] }
 tauri-sys = { git = "https://github.com/JonasKruckenberg/tauri-sys", branch = "v2", features = ["window"] }
 midir = "0.10.1"
 fxhash = "0.2.1"
+midi-control = "0.2.2"
 
 [features]
 # This feature is used for production builds or when a dev server is not specified, DO NOT REMOVE!!

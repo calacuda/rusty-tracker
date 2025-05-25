@@ -3,7 +3,8 @@
 use anyhow::{bail, Result};
 use crossbeam::channel::{unbounded, Receiver, Sender};
 use fxhash::FxHashMap;
-use midir::MidiOutput;
+use midi_control::{Channel, KeyEvent, MidiMessage};
+use midir::{MidiOutput, MidiOutputConnection};
 use std::{
     future::Future,
     pin::Pin,
@@ -20,8 +21,8 @@ use tauri::{
 // use tauri_sys::window::current_window;
 use tracing::*;
 use tracker_lib::{
-    Channel, ChannelIndex, Cmd, CmdArg, MidiNote, MidiNoteCmd, MidiTarget, PlaybackCmd,
-    PlaybackState, PlayerCmd, TrackerState,
+    ChannelIndex, Cmd, CmdArg, MidiNote, MidiNoteCmd, PlaybackCmd, PlaybackState, PlayerCmd,
+    TrackerState,
 };
 
 pub type HashMap<K, V> = FxHashMap<K, V>;
@@ -40,10 +41,10 @@ struct IO {
 pub struct Player {
     /// describes the state of playback e.g. playing, paused, etc.
     state: PlaybackState,
-    /// describes where the midi data should be sent.
-    target: MidiTarget,
-    /// used to describe which channels should be played. all not here are ignored during playback.
-    channels: Channel,
+    // /// describes where the midi data should be sent.
+    // target: MidiTarget,
+    // /// used to describe which channels should be played. all not here are ignored during playback.
+    // channels: Channel,
     /// usedd to receive control commands from other threads.
     ipc: Receiver<PlayerCmd>,
     /// the state of the song the user has written.
@@ -53,7 +54,7 @@ pub struct Player {
     // /// time till next event in nano_seconds
     // ttne: Mutex<usize>,
     /// virtual mdii output devices
-    midi_outs: HashMap<String, MidiOutput>,
+    midi_outs: HashMap<String, MidiOutputConnection>,
     /// the instant that the last beat was processed
     last_event: Instant,
     /// the amount of time between beats
@@ -88,8 +89,8 @@ impl Player {
         (
             Player {
                 state: PlaybackState::NotPlaying,
-                target: MidiTarget::BuiltinSynth,
-                channels: Channel::AllChannels,
+                // target: MidiTarget::BuiltinSynth,
+                // channels: Channel::AllChannels,
                 ipc: rx,
                 song,
                 // ttne: Mutex::new(0),
@@ -106,29 +107,73 @@ impl Player {
         )
     }
 
-    fn send_note(&mut self, note: MidiNoteCmd, channel: usize) {
+    fn send_note(&mut self, note: MidiNoteCmd, dev_name: String, channel: u8) {
         // let note = Note::from(note);
-        let (note, play) = match note {
-            MidiNoteCmd::PlayNote(note) => (note, true),
-            MidiNoteCmd::StopNote(note) => (note, false),
+        if channel >= 16 {
+            return;
+        }
+
+        let ((note, vel), play) = match note {
+            MidiNoteCmd::PlayNote((note, vel)) => ((note, vel), true),
+            MidiNoteCmd::StopNote(note) => ((note, 0), false),
             MidiNoteCmd::HoldNote => return,
         };
 
-        //  TODO: sends sends note on/off messages to the selected midi device and channel
-        match self.target {
-            // MidiTarget::BuiltinSynth => {
-            //     if play {
-            //         if let Err(e) = self.synth.lock().unwrap().play(note, channel) {
-            //             error!("the built in synth failed to play \"{note}\" on channel \"{channel}\". failed with error {e}.")
-            //         }
-            //     } else {
-            //         if let Err(e) = self.synth.lock().unwrap().stop(note, channel) {
-            //             error!("the built in synth failed to play \"{note}\" on channel \"{channel}\". failed with error {e}.")
-            //         }
-            //     }
-            // }
-            _ => error!("not implemented yet"),
+        //  sends note on/off messages to the selected midi device and channel
+        if let Some(out) = self.midi_outs.get_mut(&dev_name) {
+            let channels = [
+                Channel::Ch1,
+                Channel::Ch2,
+                Channel::Ch3,
+                Channel::Ch4,
+                Channel::Ch5,
+                Channel::Ch6,
+                Channel::Ch7,
+                Channel::Ch8,
+                Channel::Ch9,
+                Channel::Ch10,
+                Channel::Ch11,
+                Channel::Ch12,
+                Channel::Ch13,
+                Channel::Ch14,
+                Channel::Ch15,
+                Channel::Ch16,
+            ];
+
+            let cmd = if play {
+                MidiMessage::NoteOn(
+                    channels[channel as usize],
+                    KeyEvent {
+                        key: note,
+                        value: vel,
+                    },
+                )
+            } else {
+                MidiMessage::NoteOff(
+                    channels[channel as usize],
+                    KeyEvent {
+                        key: note,
+                        value: vel,
+                    },
+                )
+            };
+
+            out.send(&Vec::from(cmd));
         }
+        // match self.target {
+        //     // MidiTarget::BuiltinSynth => {
+        //     //     if play {
+        //     //         if let Err(e) = self.synth.lock().unwrap().play(note, channel) {
+        //     //             error!("the built in synth failed to play \"{note}\" on channel \"{channel}\". failed with error {e}.")
+        //     //         }
+        //     //     } else {
+        //     //         if let Err(e) = self.synth.lock().unwrap().stop(note, channel) {
+        //     //             error!("the built in synth failed to play \"{note}\" on channel \"{channel}\". failed with error {e}.")
+        //     //         }
+        //     //     }
+        //     // }
+        //     _ => error!("not implemented yet"),
+        // }
     }
 
     fn send_cmd(&mut self, _command: (Cmd, Option<CmdArg>), _channel: usize) {
@@ -180,8 +225,6 @@ impl Future for Player {
                 //     // }
                 //     error!("not implemented yet");
                 // }
-                PlayerCmd::SetPlayingChannels(channels) => s.channels = channels,
-                PlayerCmd::SetTarget(target) => s.target = target,
                 PlayerCmd::PausePlayback => match s.state {
                     PlaybackState::Playing(line_num) => s.state = PlaybackState::Paused(line_num),
                     PlaybackState::Paused(_) => error!("playback is already paused."),
@@ -236,30 +279,35 @@ impl Future for Player {
                 // .map(|window| window.emit_all("playhead", line_i).unwrap());
 
                 s.state = PlaybackState::Playing(
-                    (line_i + 1) % s.song.lock().unwrap().sequences[0].len(),
+                    (line_i + 1) % s.song.lock().unwrap().sequences[0].data.len(),
                 );
                 info!("playback state: {:0X}", line_i);
 
-                let notes: Vec<(usize, Vec<MidiNoteCmd>)> = s
+                let notes: Vec<(u8, Vec<MidiNoteCmd>, String)> = s
                     .song
                     .lock()
                     .unwrap()
                     .sequences
                     .iter()
-                    .enumerate()
-                    .map(|(i, sequence)| {
+                    // .enumerate()
+                    .map(|sequence| {
                         // if let Some(lines) = sequence {
-                        let row_dat = sequence[line_i % sequence.len()];
+                        let row_dat = sequence.data[line_i % sequence.data.len()];
 
-                        if let Some(MidiNoteCmd::PlayNote(note)) = row_dat.notes[0] {
-                            s.notes_out.send((i, Some(note)));
-                        } else if let Some(MidiNoteCmd::StopNote(_)) = row_dat.notes[0] {
-                            s.notes_out.send((i, None));
-                        }
+                        // if let Some(MidiNoteCmd::PlayNote((note,))) = row_dat.notes[0] {
+                        //     s.notes_out.send((sequence.dev,  Some(note)));
+                        // } else if let Some(MidiNoteCmd::StopNote(_)) = row_dat.notes[0] {
+                        //     s.notes_out.send((i, None));
+                        // }
 
                         (
-                            i,
-                            row_dat.notes.into_iter().filter_map(|note| note).collect(),
+                            sequence.channel,
+                            row_dat
+                                .notes
+                                .into_iter()
+                                .filter_map(|note_cmd| note_cmd)
+                                .collect(),
+                            sequence.dev.clone(),
                         )
                         // } else {
                         //     None
@@ -276,7 +324,7 @@ impl Future for Player {
                     .enumerate()
                     .map(|(i, sequence)| {
                         // if let Some(lines) = sequence {
-                        let row_dat = sequence[line_i % sequence.len()];
+                        let row_dat = sequence.data[line_i % sequence.data.len()];
 
                         (i, row_dat.cmds.into_iter().filter_map(|cmd| cmd).collect())
                         // } else {
@@ -285,10 +333,10 @@ impl Future for Player {
                     })
                     .collect();
 
-                notes.into_iter().for_each(|(channel, notes)| {
+                notes.into_iter().for_each(|(channel, notes, dev)| {
                     notes
                         .into_iter()
-                        .for_each(|note| s.send_note(note, channel))
+                        .for_each(|note| s.send_note(note, dev.clone(), channel))
                 });
 
                 cmds.into_iter().for_each(|(channel, cmds)| {
@@ -312,6 +360,7 @@ fn send_midi(_synth: State<'_, Arc<Mutex<TrackerState>>>, _midi_cmd: Vec<u8>) {
 fn add_note(
     state: State<'_, Arc<Mutex<TrackerState>>>,
     note: MidiNote,
+    vel: u8,
     channel: ChannelIndex,
     start: usize,
     stop: usize,
@@ -319,7 +368,7 @@ fn add_note(
 ) {
     // println!("inside add_note");
     if let Err(e) = state.lock().unwrap().add_note(
-        Some(MidiNoteCmd::PlayNote(note)),
+        Some(MidiNoteCmd::PlayNote((note, vel))),
         channel,
         start,
         note_number,
