@@ -84,7 +84,7 @@ impl Player {
         let (line_tx, line_rx) = unbounded();
         let (note_tx, note_rx) = unbounded();
         let tempo = 110;
-        let beat = 4;
+        let beat = 8;
         let mut midi_outs = HashMap::default();
 
         match new_midi_dev(DEFAULT_MIDI_DEV_NAME) {
@@ -218,6 +218,7 @@ impl Player {
 
     fn set_beat(&mut self, beat: u64) {
         if beat != self.beat {
+            info!("setting beat to 1/{beat}");
             self.beat = beat;
             self.recalc_beat_time();
         }
@@ -558,7 +559,7 @@ pub fn start_logging() -> Result<()> {
         .with_thread_ids(true)
         .with_target(true)
         .with_level(true)
-        .with_max_level(Level::TRACE)
+        .with_max_level(Level::DEBUG)
         .without_time()
         .finish();
     // use that subscriber to process traces emitted after this point

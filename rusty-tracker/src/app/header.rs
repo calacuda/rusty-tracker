@@ -177,7 +177,7 @@ fn SettingsMenu() -> impl IntoView {
                 <h1> "Beat:" </h1>
                 <div class="flex flex-row justify-center text-center">
                     <p> "1/" </p>
-                    <input type="number" name="beat" min=1 max=64 value=4 on:change=row_beat_change/>
+                    <input type="number" name="beat" min=1 max=64 value=8 on:change=row_beat_change/>
                 </div>
             </div>
         </div>

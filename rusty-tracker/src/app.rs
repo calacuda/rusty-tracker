@@ -167,23 +167,31 @@ pub fn App() -> impl IntoView {
         height: header_h,
     } = use_element_size(header_el);
 
-    let num_lines = move |size: f64| {
+    let UseElementSizeReturn {
+        width: main_w,
+        height: main_h,
+    } = use_element_size(main_el);
+
+    let num_lines = create_memo(move |_| {
+        let size: f64 = font_size.get().into();
         // let size = size + 8.0;
         let size = size + 2.0;
         // ((window().inner_height().unwrap().as_f64().unwrap() - header_h.get_untracked() - size)
         //     / size)
         //     .floor() as usize
-        ((window().inner_height().unwrap().as_f64().unwrap() - header_h.get_untracked()) / size)
-            .floor() as usize
-    };
+        let line_nums = ((main_h.get() - header_h.get()) / size).floor() as usize;
+        log!("line nums {line_nums}");
+
+        line_nums
+    });
 
     spawn_local(listen_on_state_change_event(set_tracker_state));
     spawn_local(listen_on_playhead_event(set_playhead));
 
     create_effect(move |_| {
-        let n_lines = num_lines(font_size.get_untracked().into());
+        let n_lines = num_lines.get();
 
-        if (playhead.get() - start_row.get_untracked()) >= (n_lines as Float * 0.75) as usize {
+        if (playhead.get() - start_row.get()) >= (n_lines as Float * 0.75) as usize {
             set_start_row.update(|row| *row += n_lines / 2);
         }
     });
@@ -191,20 +199,20 @@ pub fn App() -> impl IntoView {
     let get_state = move || {
         // let _width = width.get();
         // let size = font_size.get().into();
-        let n_rows = num_lines(font_size.get_untracked().into());
+        let n_rows = num_lines.get();
 
         log!(
             "n_rows: {n_rows:0X} | height: {}",
-            window().inner_height().unwrap().as_f64().unwrap() - header_h.get_untracked()
+            main_w.get() - header_h.get()
         );
 
         log!(
             "n_rows: {n_rows:0X} ({n_rows}, in base 10) | height: {}",
-            window().inner_height().unwrap().as_f64().unwrap() - header_h.get_untracked()
+            main_w.get() - header_h.get()
         );
 
         let args = GetStateArgs {
-            start_row: start_row.get_untracked(),
+            start_row: start_row.get(),
             n_rows,
         };
 
@@ -222,14 +230,14 @@ pub fn App() -> impl IntoView {
 
     create_effect(move |_| {
         // log!("height: {}", height.get());
-        let _ = window().inner_height();
-        let _ = header_h.get();
-        log!(
-            "height: {}",
-            (window().inner_height().unwrap().as_f64().unwrap() - header_h.get())
-        );
+        let height = main_w.get();
+        // let _header_h = header_h.get();
+        // let _header_w = header_w.get();
+        log!("height: {:?}", height);
         log!("width: {}", header_w.get());
         log!("font_size: {}", font_size.get());
+        log!("n_lines: {}", num_lines.get());
+        warn!("window geometry changed");
 
         get_state();
     });
@@ -259,7 +267,7 @@ pub fn App() -> impl IntoView {
         view! {
             <For
                 each=move || (sr..sr + tracker_state.get().sequences[0].data.len()).into_iter()
-                key=move |ln| (*ln, *ln == playhead.get())
+                key=move |ln| (*ln, *ln == playhead.get(), num_lines.get(), start_row.get())
                 children=move |ln| {
                     let line_num = format!("{:04X}", ln);
 
@@ -270,7 +278,9 @@ pub fn App() -> impl IntoView {
 
                         spawn_local(async move {
                             // logging::warn!("")
-                            invoke("playback", to_value(&args).unwrap()).await;
+                            if let Err(e) = invoke("playback", to_value(&args).unwrap()).await {
+                                error!("playback produced error: {e:?}");
+                            }
                         });
                     };
 
@@ -329,7 +339,7 @@ pub fn App() -> impl IntoView {
 
                     start..start + 4
                 }
-                key=move |i| *i
+                key=move |i| (*i, num_lines.get(), start_row.get())
                 children=move |i| {
                     view! {
                         <Sequence state=tracker_state i=i get_loc=location get_mode=mode set_loc=set_location get_storage=note_storage start_row=start_row/>
@@ -470,7 +480,7 @@ pub fn App() -> impl IntoView {
         set_location.update(|loc| {
             // if let Some((row, _)) = loc {
             if loc.0 == 0 {
-                loc.0 = num_lines(font_size.get_untracked().into())
+                loc.0 = num_lines.get()
             } else {
                 loc.0 -= 1
             }
@@ -483,7 +493,7 @@ pub fn App() -> impl IntoView {
         // TODO: if in edit mode, add check if the new cell is already populated.
         set_location.update(|loc| {
             // if let Some((row, _)) = loc {
-            if loc.0 == num_lines(font_size.get_untracked().into()) {
+            if loc.0 == num_lines.get() {
                 loc.0 = 0
             } else {
                 loc.0 += 1
@@ -510,7 +520,7 @@ pub fn App() -> impl IntoView {
 
     use_hotkeys!(("shiftleft+keyw") => move |_| {
         if mode.get() == Mode::Move || mode.get() == Mode::Edit {
-            set_start_row.update(|row| if *row != 0 { *row = *row - 1 } else { *row = LINE_LEN - num_lines(font_size.get().into()) });
+            set_start_row.update(|row| if *row != 0 { *row = *row - 1 } else { *row = LINE_LEN - num_lines.get() });
 
             get_state();
             cursor_down();
@@ -527,7 +537,7 @@ pub fn App() -> impl IntoView {
                 //     (*storage).unwrap().n_lines -= 1
                 // }
                 if let Some(selected) = storage  {
-                    (*storage).unwrap().n_lines = (location.get_untracked().0 as i64 + start_row.get() as i64) - selected.loc.0 as i64;
+                    (*storage).unwrap().n_lines = (location.get().0 as i64 + start_row.get() as i64) - selected.loc.0 as i64;
                 }
 
             );
@@ -538,7 +548,7 @@ pub fn App() -> impl IntoView {
 
     use_hotkeys!(("shiftleft+keys") => move |_| {
         if mode.get() == Mode::Move || mode.get() == Mode::Edit {
-            set_start_row.update(|row| if *row != LINE_LEN - num_lines(font_size.get().into()) { *row = *row + 1 } else { *row = 0 });
+            set_start_row.update(|row| if *row != LINE_LEN - num_lines.get() { *row = *row + 1 } else { *row = 0 });
 
             get_state();
             cursor_up();
@@ -555,8 +565,8 @@ pub fn App() -> impl IntoView {
                     //     (*storage).unwrap().n_lines -= 1
                     // }
                     if let Some(selected) = storage  {
-                        log!("{} - {} = {}", location.get_untracked().0 as i64, selected.loc.0 as i64, location.get_untracked().0 as i64 - selected.loc.0 as i64);
-                        (*storage).unwrap().n_lines = (location.get_untracked().0 as i64 + start_row.get() as i64) - selected.loc.0 as i64;
+                        log!("{} - {} = {}", location.get().0 as i64, selected.loc.0 as i64, location.get().0 as i64 - selected.loc.0 as i64);
+                        (*storage).unwrap().n_lines = (location.get().0 as i64 + start_row.get() as i64) - selected.loc.0 as i64;
 
                     }
                 }
@@ -648,12 +658,12 @@ pub fn App() -> impl IntoView {
     use_hotkeys!(("Enter", "*") => move |_| {
         match mode.get() {
             Mode::Move => {
-                let loc = location.get_untracked();
+                let loc = location.get();
 
                 log!("settings scope to edit");
                 // toggle_scope.call("edit".to_string());
                 set_mode.set(Mode::Edit);
-                set_note_storage.set(Some(NoteSetStorage { note: 0, loc: (loc.0 + start_row.get_untracked(), loc.1), n_lines: 1 }));
+                set_note_storage.set(Some(NoteSetStorage { note: 0, loc: (loc.0 + start_row.get(), loc.1), n_lines: 1 }));
                 cursor_down();
             }
             Mode::Edit => {
@@ -713,7 +723,7 @@ pub fn App() -> impl IntoView {
 
             <div class="justify-center text-center grid grid-cols-12 h-fit max-h-fit">
                 { get_line_nums }
-                { get_sequences() }
+                { get_sequences }
                 <div class="col-span-3 grid-flow-row p-2">
                     <div class=""> <br/> </div>
                     <div class=""> <br/> </div>

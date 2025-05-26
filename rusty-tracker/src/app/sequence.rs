@@ -55,7 +55,11 @@ pub fn Sequence(
                 <SequenceHeader i=i n_notes=n_notes n_cmds=n_cmds midi_dev=midi_dev midi_chan=midi_chan/>
                 <For
                     each=move || row_memo.get()
-                    key=|mem| (mem.0, mem.1.get())
+                    key={
+                        let start_row = start_row.clone();
+
+                        move |mem| (mem.0, mem.1.get(), start_row.get())
+                    }
                     children=move |(row_i, memo)| {
                         log!("generating row 0X{row_i:0X} ({row_i} in base 10) from sequence {i}");
 
@@ -132,7 +136,7 @@ pub fn SequenceRow(
         <div class="grid grid-flow-col">
             <For
                 each=move || dat.get().notes.into_iter().enumerate()
-                key=|note| note.clone()
+                key=|note| note.1.clone()
                 children=move |(i, note)| {
                     view! {
                         <NoteDisplay
@@ -151,7 +155,7 @@ pub fn SequenceRow(
             />
             <For
                 each=move || dat.get().cmds.into_iter().enumerate()
-                key=|cmd| cmd.clone()
+                key=|cmd| cmd.1.clone()
                 children=move |(_i, cmd)| {
                     let display = match cmd {
                         Some((name, arg)) => cmd_to_display(name, arg),
