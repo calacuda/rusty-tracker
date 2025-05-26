@@ -1,5 +1,9 @@
 use super::sequence::note_to_display;
-use crate::{app::PlaybackArgs, invoke};
+use crate::{
+    app::{PlaybackArgs, TIMEOUT_DURATION},
+    invoke,
+};
+use async_std::future;
 use futures_util::StreamExt;
 use leptos::{logging::*, *};
 use serde::Serialize;
@@ -91,7 +95,13 @@ fn PlaybackControls(set_playhead: WriteSignal<usize>) -> impl IntoView {
 
                     spawn_local(async move {
                         log!("starting playback");
-                        invoke("playback", to_value(&args).unwrap()).await;
+                        if let Ok(res) = future::timeout(TIMEOUT_DURATION, invoke("playback", to_value(&args).unwrap())).await {
+                            if let Err(e) = res {
+                                error!("startting playback failed with error: {e:?}");
+                            }
+                        } else {
+                            error!("starting playback timed-out");
+                        }
                     });
                 }
             >
@@ -107,8 +117,14 @@ fn PlaybackControls(set_playhead: WriteSignal<usize>) -> impl IntoView {
 
                     spawn_local(async move {
                         log!("stoping");
-                        invoke("playback", to_value(&args).unwrap()).await;
-                        set_playhead.set(0);
+                        if let Ok(res) = future::timeout(TIMEOUT_DURATION, invoke("playback", to_value(&args).unwrap())).await {
+                            if let Err(e) = res {
+                                error!("stopping playback failed with error: {e:?}");
+                            }
+                            set_playhead.set(0);
+                        } else {
+                            error!("stopping playback timed-out");
+                        }
                     });
                 }
             >
@@ -122,7 +138,7 @@ fn PlaybackControls(set_playhead: WriteSignal<usize>) -> impl IntoView {
 #[component]
 fn SettingsMenu() -> impl IntoView {
     let (tempo, set_tempo) = create_signal(110);
-    let (beat, set_beat) = create_signal(4);
+    let (beat, set_beat) = create_signal(8);
 
     let backend_tempo = move || {
         let args = TempoArgs {
@@ -133,7 +149,9 @@ fn SettingsMenu() -> impl IntoView {
 
         spawn_local(async move {
             // warn!("adding note async block");
-            invoke("set_tempo", to_value(&args).unwrap()).await;
+            if let Err(e) = invoke("set_tempo", to_value(&args).unwrap()).await {
+                error!("attempt to set the tempo failed with error: {e:?}");
+            }
         });
     };
 
@@ -146,21 +164,55 @@ fn SettingsMenu() -> impl IntoView {
 
         spawn_local(async move {
             // warn!("adding note async block");
-            invoke("set_beat", to_value(&args).unwrap()).await;
+            if let Err(e) = invoke("set_beat", to_value(&args).unwrap()).await {
+                error!("attempt to set the beat failed with error: {e:?}");
+            }
         });
     };
 
     let tempo_change = move |ev| {
-        // TODO: handle tempo change on the back-end
         set_tempo.set(event_target_value(&ev).parse().unwrap());
 
+        // send tempo change to the back-end
         backend_tempo();
     };
-    let row_beat_change = move |ev| {
-        // TODO: handle beat change on back-end
-        set_beat.set(event_target_value(&ev).parse().unwrap());
 
-        backend_beat();
+    let row_beat_change = move |ev| {
+        if let Ok(new_beat) = event_target_value(&ev).parse() {
+            let old_beat = beat.get();
+
+            let set_beat_to = match (old_beat, new_beat) {
+                (1, 0) => 512,
+                (2, 3) => 4,
+                (2, 1) => 1,
+                (4, 3) => 2,
+                (4, 5) => 8,
+                (8, 7) => 4,
+                (8, 9) => 16,
+                (16, 15) => 8,
+                (16, 17) => 32,
+                (32, 31) => 16,
+                (32, 33) => 64,
+                (64, 63) => 32,
+                (64, 65) => 128,
+                (128, 127) => 64,
+                (128, 129) => 256,
+                (256, 255) => 128,
+                (256, 257) => 512,
+                (512, 511) => 256,
+                (512, 513) => 1,
+                _ => new_beat,
+            };
+
+            // log!("old_beat = {old_beat}");
+            // log!("new_beat = {new_beat}");
+            // log!("set_beat_to = {set_beat_to}");
+
+            set_beat.set(set_beat_to);
+
+            // send beat change to back-end
+            backend_beat();
+        }
     };
 
     backend_tempo();
@@ -177,7 +229,7 @@ fn SettingsMenu() -> impl IntoView {
                 <h1> "Beat:" </h1>
                 <div class="flex flex-row justify-center text-center">
                     <p> "1/" </p>
-                    <input type="number" name="beat" min=1 max=64 value=8 on:change=row_beat_change/>
+                    <input type="number" name="beat" min=0 max=513 prop:value=beat on:change=row_beat_change/>
                 </div>
             </div>
         </div>

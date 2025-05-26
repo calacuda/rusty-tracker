@@ -6,7 +6,7 @@ use leptos_use::{use_element_size, UseElementSizeReturn};
 use sequence::Sequence;
 use serde::{Deserialize, Serialize};
 use serde_wasm_bindgen::to_value;
-use std::fmt::Display;
+use std::{fmt::Display, time::Duration};
 use tauri_sys::event;
 use tracker_lib::{
     ChannelIndex, Float, MidiNote, MidiNoteCmd, PlaybackCmd, TrackerState, LINE_LEN,
@@ -16,6 +16,8 @@ use wasm_bindgen_futures::spawn_local;
 
 mod header;
 pub mod sequence;
+
+pub const TIMEOUT_DURATION: Duration = Duration::from_millis(5);
 
 #[wasm_bindgen]
 extern "C" {
@@ -39,6 +41,12 @@ pub struct GetStateArgs {
     start_row: usize,
     // stop_row: usize,
     n_rows: usize,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+pub struct RecordHeadArgs {
+    sequence: usize,
+    note_n: usize,
 }
 
 #[derive(Clone, Copy, Serialize, Deserialize)]
@@ -191,7 +199,12 @@ pub fn App() -> impl IntoView {
     create_effect(move |_| {
         let n_lines = num_lines.get();
 
-        if (playhead.get() - start_row.get()) >= (n_lines as Float * 0.75) as usize {
+        if playhead
+            .get()
+            .checked_sub(start_row.get())
+            .map(|loc| loc >= (n_lines as Float * 0.75) as usize)
+            .is_some_and(|inner| inner)
+        {
             set_start_row.update(|row| *row += n_lines / 2);
         }
     });
@@ -247,6 +260,24 @@ pub fn App() -> impl IntoView {
 
         log!("location change => {loc:?}");
 
+        // TODO: call tauri backend funtion to set midi record location.
+
+        if loc.1 % 6 <= 3 {
+            let args = RecordHeadArgs {
+                sequence: loc.1 / 6,
+                note_n: loc.1 % 6,
+            };
+
+            spawn_local(async move {
+                // logging::warn!("")
+                if let Err(e) = invoke("set_record_head", to_value(&args).unwrap()).await {
+                    error!("setting record head produced error: {e:?}");
+                }
+
+                // log!("set rec head loc");
+            });
+        }
+
         match mode.get() {
             Mode::Edit => {
                 set_note_storage.update(|storage| {
@@ -258,6 +289,8 @@ pub fn App() -> impl IntoView {
             _ => {}
         }
     });
+
+    create_effect(move |_| {});
 
     // let state_size = move || tracker_state.get().sequences[0].len();
 
@@ -386,7 +419,9 @@ pub fn App() -> impl IntoView {
 
             spawn_local(async move {
                 // warn!("adding note async block");
-                invoke("add_note", to_value(&args_play).unwrap()).await;
+                if let Err(e) = invoke("add_note", to_value(&args_play).unwrap()).await {
+                    error!("could not add note. got error: {e:?}.");
+                }
 
                 get_state();
             });
@@ -410,7 +445,9 @@ pub fn App() -> impl IntoView {
 
         spawn_local(async move {
             // warn!("adding note async block");
-            invoke("rm_note", to_value(&args_play).unwrap()).await;
+            if let Err(e) = invoke("rm_note", to_value(&args_play).unwrap()).await {
+                error!("could not rm note. got error: {e:?}.");
+            }
 
             get_state();
         });
@@ -476,7 +513,6 @@ pub fn App() -> impl IntoView {
 
     let cursor_up = move || {
         // set_count.update(|c| *c += 1);
-        // TODO: if in edit mode, add check if the new cell is already populated.
         set_location.update(|loc| {
             // if let Some((row, _)) = loc {
             if loc.0 == 0 {
@@ -490,7 +526,6 @@ pub fn App() -> impl IntoView {
 
     let cursor_down = move || {
         // set_count.update(|c| *c += 1);
-        // TODO: if in edit mode, add check if the new cell is already populated.
         set_location.update(|loc| {
             // if let Some((row, _)) = loc {
             if loc.0 == num_lines.get() {
@@ -556,18 +591,9 @@ pub fn App() -> impl IntoView {
 
         if mode.get() == Mode::Edit {
             set_note_storage.update(|storage| {
-                    // if let Some(selected) = storage
-                    //     && !(selected.n_lines < 0
-                    //         && (selected.n_lines as usize > selected.loc.0 ))
-                    //     && !(selected.n_lines > 0
-                    //         && (selected.n_lines as usize > (LINE_LEN - selected.0)))
-                    // {
-                    //     (*storage).unwrap().n_lines -= 1
-                    // }
                     if let Some(selected) = storage  {
                         log!("{} - {} = {}", location.get().0 as i64, selected.loc.0 as i64, location.get().0 as i64 - selected.loc.0 as i64);
                         (*storage).unwrap().n_lines = (location.get().0 as i64 + start_row.get() as i64) - selected.loc.0 as i64;
-
                     }
                 }
             );
@@ -660,8 +686,16 @@ pub fn App() -> impl IntoView {
             Mode::Move => {
                 let loc = location.get();
 
-                log!("settings scope to edit");
                 // toggle_scope.call("edit".to_string());
+                // let loc = (loc.0 + start_row.get(), loc.1);
+                let x = loc.1 % 6;
+                let row = tracker_state.get_untracked().sequences[loc.1 / 6].data[loc.0];
+
+                if if x <=3 { row.notes[x].is_some() } else { row.cmds[x - 4].is_some() } {
+                    return;
+                }
+
+                log!("settings scope to edit");
                 set_mode.set(Mode::Edit);
                 set_note_storage.set(Some(NoteSetStorage { note: 0, loc: (loc.0 + start_row.get(), loc.1), n_lines: 1 }));
                 cursor_down();

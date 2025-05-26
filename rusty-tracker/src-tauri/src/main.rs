@@ -1,21 +1,16 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-use anyhow::{bail, Result};
+use anyhow::bail;
 use crossbeam::channel::{unbounded, Receiver, Sender};
 use fxhash::FxHashMap;
 use midi_control::{Channel, KeyEvent, MidiMessage};
 use midir::{os::unix::VirtualOutput, MidiOutput, MidiOutputConnection};
 use std::{
-    future::Future,
-    pin::Pin,
-    sync::{Arc, Mutex},
-    task::Poll,
-    // thread,
-    time::{Duration, Instant},
+    future::Future, pin::Pin, sync::{Arc, Mutex as StdMutex}, task::Poll, time::{Duration, Instant}
 };
 // use synth_lib::{audio::TrackerSynth, init_synth, Note};
 use tauri::{
-    async_runtime::{spawn, JoinHandle},
+    async_runtime::{spawn, JoinHandle, Mutex},
     Emitter, Manager, State, Window,
 };
 // use tauri_sys::window::current_window;
@@ -48,7 +43,7 @@ pub struct Player {
     /// usedd to receive control commands from other threads.
     ipc: Receiver<PlayerCmd>,
     /// the state of the song the user has written.
-    song: Arc<Mutex<TrackerState>>,
+    song: Arc<StdMutex<TrackerState>>,
     // /// the synth that is used when `self.target` is set to `MidiTarget::BuiltinSynth`.
     // synth: Arc<Mutex<TrackerSynth>>,
     // /// time till next event in nano_seconds
@@ -66,11 +61,12 @@ pub struct Player {
     // window: Option<Window>,
     line_out: Sender<usize>,
     notes_out: Sender<(usize, Option<MidiNote>)>,
+    rec_head: (usize, usize),
 }
 
 impl Player {
     pub fn new(
-        song: Arc<Mutex<TrackerState>>,
+        song: Arc<StdMutex<TrackerState>>,
         // synth: Arc<Mutex<TrackerSynth>>,
     ) -> (
         Self,
@@ -114,6 +110,7 @@ impl Player {
                 beat,
                 line_out: line_tx,
                 notes_out: note_tx,
+                rec_head: (0, 0),
             },
             (tx, line_rx, note_rx),
         )
@@ -255,6 +252,7 @@ impl Future for Player {
                         error!("can't stop playing while already not playing");
                     } else {
                         s.state = PlaybackState::NotPlaying;
+                        s.last_event = Instant::now() - Duration::from_nanos(NANO_MIN);
                     }
                 }
                 PlayerCmd::SetCursor(loc) => match s.state {
@@ -273,10 +271,19 @@ impl Future for Player {
                 //     );
                 // }
                 // }
-                // PlayerCmd::SetWavetable((_channel, Wavetable::FromFile(_table_file))) => {
+                // PlayerCmd::SetWavetable((_clet dur = Duration::from_millis(5);hannel, Wavetable::FromFile(_table_file))) => {
                 //     // TODO: add loading of wave table from file.
                 //     todo!("load wave table from file")
                 // }
+                PlayerCmd::SetRecHead(sequence, note_n) => {
+                    let row = s.song.lock().unwrap().sequences[0].clone();
+
+                    if sequence < row.data.len() && note_n < row.data[0].notes.len() {
+                        s.rec_head = (sequence, note_n)
+                    } else {
+                        error!("sequence: {sequence}, note: {note_n}. invalid");
+                    }
+                }
             }
         }
 
@@ -288,7 +295,7 @@ impl Future for Player {
 
                 if let Err(e) = s.line_out.send(line_i) {
                     error!("could not send line num over internal crossbeam channel. incountered error: {e}");
-                };
+                }
 
                 // .clone()
                 // .map(|window| window.emit_all("playhead", line_i).unwrap());
@@ -378,23 +385,23 @@ fn new_midi_dev(name: &str) -> anyhow::Result<MidiOutputConnection> {
 }
 
 #[tauri::command(rename_all = "snake_case")]
-fn send_midi(_synth: State<'_, Arc<Mutex<TrackerState>>>, _midi_cmd: Vec<u8>) {
+fn send_midi(_synth: State<'_, Arc<StdMutex<TrackerState>>>, _midi_cmd: Vec<u8>) {
     // synth.stop(note);
     warn!("sending of generic MIDI commands is not yet implemented");
 }
 
 #[tauri::command(rename_all = "snake_case")]
-fn add_note(
-    state: State<'_, Arc<Mutex<TrackerState>>>,
+async fn add_note(
+    state: State<'_, Arc<StdMutex<TrackerState>>>,
     note: MidiNote,
     vel: u8,
     channel: ChannelIndex,
     start: usize,
     stop: usize,
     note_number: usize,
-) {
+) -> Result<(), ()> {
     // println!("inside add_note");
-    if let Err(e) = state.lock().unwrap().add_note(
+    if let Err(e) = state.lock().map_err(|_e| ())?.add_note(
         Some(MidiNoteCmd::PlayNote((note, vel))),
         channel,
         start,
@@ -406,15 +413,14 @@ fn add_note(
     for i in (start + 1)..stop {
         if let Err(e) =
             state
-                .lock()
-                .unwrap()
+                .lock().map_err(|_e| ())?
                 .add_note(Some(MidiNoteCmd::HoldNote), channel, i, note_number)
         {
             error!("failed to add note: {note:?}, to channel {channel}, at row {i}. this process failed with error: {e}");
         }
     }
 
-    if let Err(e) = state.lock().unwrap().add_note(
+    if let Err(e) = state.lock().map_err(|_e| ())?.add_note(
         Some(MidiNoteCmd::StopNote(note)),
         channel,
         stop,
@@ -426,19 +432,23 @@ fn add_note(
     // else {WEBKIT_DISABLE_DMABUF_RENDERER=0
     //     info!("added note {note} successfully");
     // }
+
+    Ok(())
 }
 
 #[tauri::command(rename_all = "snake_case")]
-fn rm_note(
-    state: State<'_, Arc<Mutex<TrackerState>>>,
+async fn rm_note(
+    state: State<'_, Arc<StdMutex<TrackerState>>>,
     channel: ChannelIndex,
     row: usize,
     note_number: usize,
-) {
+) -> Result<(), ()> {
     // println!("inside add_note");
-    if let Err(e) = state.lock().unwrap().rm_note(channel, row, note_number) {
+    if let Err(e) = state.lock().map_err(|_e| ())?.rm_note(channel, row, note_number) {
         error!("failed to rm note on row {row}, from channel {channel}. this process failed with error: {e}");
     }
+
+    Ok(())
 }
 
 // #[tauri::command(rename_all = "snake_case")]
@@ -453,16 +463,21 @@ fn rm_note(
 
 async fn line_out(window: Window, line_rx: Receiver<usize>) {
     loop {
-        // might not be nessesary
-        while line_rx.len() > 1 {
-            line_rx.recv().unwrap();
-        }
+        // // might not be nessesary
+        // while line_rx.len() > 1 {
+        //     line_rx.recv().unwrap();
+        // }
 
         while let Ok(ln) = line_rx.recv() {
+            // info!("line number {ln}");
+
             if let Some(window) = window.get_webview_window(WEB_VIEW_WINDOW) {
+                // info!("line number sent");
                 window.emit("playhead", ln).unwrap();
             }
         }
+
+        // info!("line")
     }
 }
 
@@ -470,7 +485,7 @@ async fn note_out(window: Window, note_rx: Receiver<(usize, Option<MidiNote>)>) 
     loop {
         // // might not be nessesary
         // while note_rx.len() > 1 {
-        //     line_rx.recv().unwrap();
+        //     note_rx.recv().unwrap();
         // }
 
         while let Ok(note_dat) = note_rx.recv() {
@@ -482,77 +497,116 @@ async fn note_out(window: Window, note_rx: Receiver<(usize, Option<MidiNote>)>) 
 }
 
 #[tauri::command(rename_all = "snake_case")]
-fn playback(
+async fn playback(
     // player: State<'_, Arc<Mutex<Player>>>,
     window: Window,
     player_ipc: State<'_, Arc<Mutex<Sender<PlayerCmd>>>>,
-    io_threads: State<'_, Arc<Mutex<IO>>>,
+    io_threads: State<'_, Arc<Mutex<Option<IO>>>>,
     line_rx: State<'_, Receiver<usize>>,
     note_rx: State<'_, Receiver<(usize, Option<MidiNote>)>>,
     playback_cmd: PlaybackCmd,
-) {
+) -> Result<(), ()> {
     // warn!("playback is not yet enabled on the back end is not yet implemented");
+    warn!("playback called. playback: {playback_cmd:?}");
+    let player_ipc = player_ipc.lock().await;
+    warn!("lock obtained. playback: {playback_cmd:?}");
+    
     match playback_cmd {
         PlaybackCmd::Play => {
-            if let Err(e) = player_ipc.lock().unwrap().send(PlayerCmd::ResumePlayback) {
+            if let Err(e) = player_ipc.send(PlayerCmd::ResumePlayback) {
                 error!("failed to play: {e}");
             } else {
-                let line_rx = line_rx.inner().clone();
-                io_threads.lock().unwrap().line_out = spawn(line_out(window.clone(), line_rx));
+                let mut threads = io_threads.lock().await;
+                warn!("lock obtained for threads.");
+                if threads.is_none() { 
+                    let line_rx = line_rx.inner().clone();
+                    let note_rx = note_rx.inner().clone();
+                    
+                    // threads.line_out = spawn(line_out(window.clone(), line_rx));
+                    // line_out(window.clone(), line_rx).await;
 
-                let note_rx = note_rx.inner().clone();
-                io_threads.lock().unwrap().note_out = spawn(note_out(window.clone(), note_rx));
+                    // threads.note_out = spawn(note_out(window.clone(), note_rx));
+                    // note_out(window.clone(), note_rx).await;
+                    *threads =
+                        Some(IO {
+                            line_out: spawn(line_out(window.clone(), line_rx)),
+                            note_out: spawn(note_out(window.clone(), note_rx)),
+                        });
+                }
             };
         }
         PlaybackCmd::Stop => {
-            if let Err(e) = player_ipc.lock().unwrap().send(PlayerCmd::StopPlayback) {
+            if let Err(e) = player_ipc.send(PlayerCmd::StopPlayback) {
                 error!("failed to stop: {e}");
             } else {
                 // set all join_handles back to nothing
-                let mut threads = io_threads.lock().unwrap();
-
-                (*threads).line_out = spawn(async move { () });
-                (*threads).note_out = spawn(async move { () });
+                // let mut threads = io_threads.lock().await;
+                // (*threads).line_out.abort();
+                // (*threads).note_out.abort();
+                //
+                // (*threads).line_out = spawn(async move { () });
+                // (*threads).note_out = spawn(async move { () });
             };
         }
         PlaybackCmd::SetCursor(loc) => {
-            if let Err(e) = player_ipc.lock().unwrap().send(PlayerCmd::SetCursor(loc)) {
+            if let Err(e) = player_ipc.send(PlayerCmd::SetCursor(loc)) {
                 error!("failed to set cursor loction: {e}");
             }
         }
         _ => warn!("playback is not yet enabled on the back end is not yet implemented"),
     }
+    
+    Ok(())
 }
 
 #[tauri::command(rename_all = "snake_case")]
-fn set_tempo(player: State<'_, Arc<Mutex<Sender<PlayerCmd>>>>, tempo: u64) {
+async fn set_tempo(player: State<'_, Arc<Mutex<Sender<PlayerCmd>>>>, tempo: u64) -> Result<(), ()> {
     if tempo > 1 {
-        let _ = player.lock().unwrap().send(PlayerCmd::SetTempo(tempo));
+        let _ = player.lock().await.send(PlayerCmd::SetTempo(tempo));
     }
+
+    Ok(())
 }
 
 #[tauri::command(rename_all = "snake_case")]
-fn set_beat(player: State<'_, Arc<Mutex<Sender<PlayerCmd>>>>, beat: u64) {
+async fn set_beat(player: State<'_, Arc<Mutex<Sender<PlayerCmd>>>>, beat: u64) -> Result<(), ()> {
     if beat > 1 {
-        let _ = player.lock().unwrap().send(PlayerCmd::SetBeat(beat));
+        let _ = player.lock().await.send(PlayerCmd::SetBeat(beat));
     }
+
+    Ok(())
 }
 
 #[tauri::command(rename_all = "snake_case")]
-fn get_state(
+async fn get_state(
     window: Window,
-    state: State<'_, Arc<Mutex<TrackerState>>>,
+    state: State<'_, Arc<StdMutex<TrackerState>>>,
     start_row: usize,
     n_rows: usize,
-) {
-    let tracker_state = { state.lock().unwrap().copy_from_row(start_row, n_rows) };
+) -> Result<(), ()> {
+    let tracker_state = { state.lock().map_err(|_e| ())?.copy_from_row(start_row, n_rows) };
 
     if let Some(window) = window.get_webview_window(WEB_VIEW_WINDOW) {
         window.emit("state-change", tracker_state).unwrap();
     }
+
+    Ok(())
 }
 
-pub fn start_logging() -> Result<()> {
+#[tauri::command(rename_all = "snake_case")]
+async fn set_record_head(
+    player: State<'_, Arc<Mutex<Sender<PlayerCmd>>>>,
+    sequence: usize,
+    note_n: usize,
+) -> Result<(), ()> {
+    if let Err(e) = player.lock().await.send(PlayerCmd::SetRecHead(sequence, note_n)) {
+        error!("{e}");
+    }
+
+    Ok(())
+}
+
+pub fn start_logging() -> anyhow::Result<()> {
     // construct a subscriber that prints formatted traces to stdout
     let subscriber = tracing_subscriber::fmt()
         .compact()
@@ -570,7 +624,7 @@ pub fn start_logging() -> Result<()> {
 
 // #[tokio::main(flavor = "multi_thread", worker_threads = 2)]
 // async fn main() -> Result<()> {
-fn main() -> Result<()> {
+fn main() -> anyhow::Result<()> {
     // let (synth, stream_handle, audio) = match init_synth() {
     //     Ok((synth, stream_handle, audio)) => (synth, stream_handle, audio),
     //     Err(e) => {
@@ -587,16 +641,13 @@ fn main() -> Result<()> {
     
     // stream_handle.play_raw(audio).unwrap();
     info!("initializing tracker state");
-    let state = Arc::new(Mutex::new(TrackerState::default()));
+    let state = Arc::new(StdMutex::new(TrackerState::default()));
 
     info!("initializing player");
     let (player, (player_ipc, line_rx, note_rx)) = Player::new(state.clone());
     let player_ipc = Arc::new(Mutex::new(player_ipc));
-    let _midi_thread = spawn(player);
-    let io = Arc::new(Mutex::new(IO {
-        line_out: spawn(async move { () }),
-        note_out: spawn(async move { () }),
-    }));
+    let _midi_threthreads = spawn(player);
+    let io: Arc<Mutex<Option<IO>>> = Arc::new(Mutex::new(None));
 
     tauri::Builder::default()
         // .manage(synth)
@@ -609,7 +660,7 @@ fn main() -> Result<()> {
         .invoke_handler(tauri::generate_handler![
             // play_note,
             // stop_note,
-            send_midi, playback, add_note, get_state, rm_note, set_tempo, set_beat
+            send_midi, playback, add_note, get_state, rm_note, set_tempo, set_beat, set_record_head
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -23,6 +23,7 @@ futures-util = "0.3.31"
 # leptos_hotkeys = { version = "0.2.2", features = ["debug"] }
 leptos_hotkeys = { version = "0.2.2" }
 leptos-use = "0.13"
+async-std = "1.13.1"
 
 [workspace]
 members = ["src-tauri"]

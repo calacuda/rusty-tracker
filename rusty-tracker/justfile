@@ -2,10 +2,10 @@ dev:
   WEBKIT_DISABLE_DMABUF_RENDERER=1 cargo tauri dev
 
 release:
-  cargo tauri dev --release
+  WEBKIT_DISABLE_DMABUF_RENDERER=1 cargo tauri dev --release
 
 build:
-  cargo tauri build 
+  cargo tauri build -r
 
 tailwind:
   npm list @catppuccin/tailwindcss > /dev/null || npm install -D @catppuccin/tailwindcss

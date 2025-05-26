@@ -9,7 +9,7 @@ this project is in the very early statges of development and is not yet suitable
 ## TODO 
 
 - [ ] add midi keyboard input.
-- [ ] add changin of midi device & channel.
+- [ ] add changing of midi device & channel.
 - [ ] saving and loading of midi/tracker files.
 - [ ] add controller support.
 - [ ] use spacebar to move around the begining/end of notes. or move the whole note.

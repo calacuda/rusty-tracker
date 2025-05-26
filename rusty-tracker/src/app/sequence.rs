@@ -184,7 +184,7 @@ pub fn SequenceHeader(
         .map(|n| {
             view! {
                 <div>
-                    { format!("N-{n}") }
+                    { format!("N-{}", n + 1) }
                 </div>
             }
         })
@@ -193,7 +193,7 @@ pub fn SequenceHeader(
         .map(|n| {
             view! {
                 <div>
-                    { format!("C-{n}") }
+                    { format!("C-{}", n + 1) }
                 </div>
             }
         })
@@ -202,10 +202,10 @@ pub fn SequenceHeader(
     view! {
         <div class="">
             <div class="">
-                { move || format!("{}:{}", midi_dev.get(), midi_chan.get()) }
+                { move || format!("{}:{}", midi_dev.get(), midi_chan.get() + 1) }
             </div>
             <div class="">
-                { format!("Track => {i}") }
+                { format!("Track => {}", i + 1) }
             </div>
 
             <div class="grid grid-flow-col">

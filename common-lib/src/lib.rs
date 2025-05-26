@@ -299,6 +299,7 @@ pub enum PlayerCmd {
     SetTempo(u64),
     SetBeat(u64),
     // SetWavetable((ChannelIndex, Wavetable)),
+    SetRecHead(usize, usize),
 }
 
 pub fn get_cmd_arg_val(arg: CmdArg) -> usize {
