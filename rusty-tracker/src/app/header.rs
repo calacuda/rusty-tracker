@@ -22,46 +22,46 @@ struct BeatArgs {
     beat: u64,
 }
 
-#[component]
-pub fn Header() -> impl IntoView {
-    view! {
-        // settings menu
-        <p> "settings menu (WIP)" </p>
-        <div class="justify-center text-center gap-x-2 flex">
-            <button
-                class="bg-peach px-2"
-                on:click=move |_| {
-                    let args = PlaybackArgs {
-                        playback_cmd: PlaybackCmd::Play,
-                    };
-
-                    spawn_local(async move {
-                        log!("starting playback");
-                        invoke("playback", to_value(&args).unwrap()).await;
-                    });
-                }
-            >
-                "start playback"
-            </button>
-            // <div class="p-2"></div>
-            <button
-                class="bg-peach px-2"
-                on:click=move |_| {
-                    let args = PlaybackArgs {
-                        playback_cmd: PlaybackCmd::Stop,
-                    };
-
-                    spawn_local(async move {
-                        log!("stoping playback");
-                        invoke("playback", to_value(&args).unwrap()).await;
-                    });
-                }
-            >
-                "stop playback"
-            </button>
-        </div>
-    }
-}
+// #[component]
+// pub fn Header() -> impl IntoView {
+//     view! {
+//         // settings menu
+//         <p> "settings menu (WIP)" </p>
+//         <div class="justify-center text-center gap-x-2 flex">
+//             <button
+//                 class="bg-peach px-2"
+//                 on:click=move |_| {
+//                     let args = PlaybackArgs {
+//                         playback_cmd: PlaybackCmd::Play,
+//                     };
+//
+//                     spawn_local(async move {
+//                         log!("starting playback");
+//                         invoke("playback", to_value(&args).unwrap()).await;
+//                     });
+//                 }
+//             >
+//                 "start playback"
+//             </button>
+//             // <div class="p-2"></div>
+//             <button
+//                 class="bg-peach px-2"
+//                 on:click=move |_| {
+//                     let args = PlaybackArgs {
+//                         playback_cmd: PlaybackCmd::Stop,
+//                     };
+//
+//                     spawn_local(async move {
+//                         log!("stoping playback");
+//                         invoke("playback", to_value(&args).unwrap()).await;
+//                     });
+//                 }
+//             >
+//                 "stop playback"
+//             </button>
+//         </div>
+//     }
+// }
 
 #[component]
 pub fn SideCar(set_playhead: WriteSignal<usize>) -> impl IntoView {
@@ -97,7 +97,7 @@ fn PlaybackControls(set_playhead: WriteSignal<usize>) -> impl IntoView {
                         log!("starting playback");
                         if let Ok(res) = future::timeout(TIMEOUT_DURATION, invoke("playback", to_value(&args).unwrap())).await {
                             if let Err(e) = res {
-                                error!("startting playback failed with error: {e:?}");
+                                error!("starthreads.replace()tting playback failed with error: {e:?}");
                             }
                         } else {
                             error!("starting playback timed-out");
@@ -263,11 +263,6 @@ fn TrackMonitor(track_number: usize) -> impl IntoView {
 
     // start event listener to update signal
     spawn_local(listen_on_note_change_event(set_playing_note, track_number));
-
-    // let display = move || match playing_note.get() {
-    //     Some(note) => note_to_display(note),
-    //     None => String::new(),
-    // };
 
     view! {
         { move ||
