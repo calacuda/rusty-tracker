@@ -92,7 +92,7 @@ pub fn note_to_display(midi_note: MidiNote) -> String {
     let octave = midi_note / 12;
 
     let note_names = [
-        "C-", "C#", "D-", "D#", "E-", "F-", "F#", "G-", "G#", "A-", "A#", "B-", "B#",
+        "C-", "C#", "D-", "D#", "E-", "F-", "F#", "G-", "G#", "A-", "A#", "B-",
     ];
     let note_name = note_names[note_name_i as usize];
 
